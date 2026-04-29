@@ -126,6 +126,10 @@ type Action =
       syncState: ConversationSyncState
     }
   | {
+      type: "CLEAR_EPHEMERAL_STATE"
+      conversationId: number
+    }
+  | {
       type: "MIGRATE_CONVERSATION"
       fromConversationId: number
       toConversationId: number
@@ -679,6 +683,15 @@ function reducer(
         syncState: action.syncState,
       }))
 
+    case "CLEAR_EPHEMERAL_STATE":
+      return updateSessionInState(state, action.conversationId, (current) => ({
+        ...current,
+        optimisticTurns: [],
+        liveMessage: null,
+        syncState: "idle",
+        activeTurnToken: null,
+      }))
+
     case "MIGRATE_CONVERSATION": {
       if (action.fromConversationId === action.toConversationId) return state
       const from = state.byConversationId.get(action.fromConversationId)
@@ -813,6 +826,7 @@ interface ConversationRuntimeContextValue {
     conversationId: number,
     syncState: ConversationSyncState
   ) => void
+  clearEphemeralState: (conversationId: number) => void
   syncTurnMetadata: (
     dbConversationId: number,
     runtimeConversationId?: number
@@ -911,12 +925,12 @@ export function ConversationRuntimeProvider({
     const session = stateRef.current.byConversationId.get(conversationId)
     if (session?.detail || session?.detailLoading) return
 
-    // Skip fetch if session has active data (ongoing conversation)
+    // Skip fetch if session has active in-flight data (ongoing conversation).
+    // Completed localTurns should not block cold-history restore after reopen:
+    // they are only a temporary mirror until DB detail is fetched.
     if (
       session &&
-      (session.optimisticTurns.length > 0 ||
-        session.liveMessage !== null ||
-        session.localTurns.length > 0)
+      (session.optimisticTurns.length > 0 || session.liveMessage !== null)
     ) {
       return
     }
@@ -1084,6 +1098,10 @@ export function ConversationRuntimeProvider({
     []
   )
 
+  const clearEphemeralState = useCallback((conversationId: number) => {
+    dispatch({ type: "CLEAR_EPHEMERAL_STATE", conversationId })
+  }, [])
+
   const migrateConversation = useCallback(
     (fromConversationId: number, toConversationId: number) => {
       dispatch({
@@ -1123,6 +1141,7 @@ export function ConversationRuntimeProvider({
       setLiveMessage,
       setExternalId,
       setSyncState,
+      clearEphemeralState,
       migrateConversation,
       setPendingCleanup,
       removeConversation,
@@ -1140,6 +1159,7 @@ export function ConversationRuntimeProvider({
       setLiveMessage,
       setExternalId,
       setSyncState,
+      clearEphemeralState,
       migrateConversation,
       setPendingCleanup,
       removeConversation,

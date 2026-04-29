@@ -140,7 +140,15 @@ pub enum AcpEvent {
     /// Whether the agent supports session/fork
     ForkSupported { supported: bool },
     /// Current session mode changed
-    ModeChanged { mode_id: String },
+    ModeChanged {
+        connection_id: String,
+        mode_id: String,
+    },
+    /// Current session model changed
+    ModelChanged {
+        connection_id: String,
+        model_id: String,
+    },
     /// Agent reported plan update for current turn
     PlanUpdate { entries: Vec<PlanEntryInfo> },
     /// Connection status changed

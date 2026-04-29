@@ -56,6 +56,7 @@ import type {
   McpMarketplaceProvider,
   McpMarketplaceItem,
   McpMarketplaceServerDetail,
+  MessageTurn,
 } from "./types"
 
 export async function listConversations(params?: {
@@ -944,6 +945,13 @@ export async function deleteConversation(
   conversationId: number
 ): Promise<void> {
   return invoke("delete_conversation", { conversationId })
+}
+
+export async function saveConversationTurns(
+  conversationId: number,
+  turns: MessageTurn[]
+): Promise<void> {
+  return invoke("save_conversation_turns", { conversationId, turns })
 }
 
 // Folder command management

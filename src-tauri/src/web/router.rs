@@ -404,11 +404,7 @@ pub fn build_router(
         )
         .route("/acp_prompt", post(handlers::acp::acp_prompt))
         .route("/acp_preflight", post(handlers::acp::acp_preflight))
-        .route("/acp_set_mode", post(handlers::acp::acp_set_mode))
-        .route(
-            "/acp_set_config_option",
-            post(handlers::acp::acp_set_config_option),
-        )
+        .route("/acp_set_config_option", post(handlers::acp::acp_set_config_option))
         .route("/acp_cancel", post(handlers::acp::acp_cancel))
         .route("/acp_fork", post(handlers::acp::acp_fork))
         .route(

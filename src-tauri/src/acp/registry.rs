@@ -19,6 +19,11 @@ pub enum AgentDistribution {
         env: &'static [(&'static str, &'static str)],
         platforms: &'static [PlatformBinary],
     },
+    SystemCommand {
+        cmd: &'static str,
+        args: &'static [&'static str],
+        env: &'static [(&'static str, &'static str)],
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -38,9 +43,9 @@ pub struct AcpAgentMeta {
 impl AcpAgentMeta {
     pub fn registry_version(&self) -> Option<&'static str> {
         match &self.distribution {
-            AgentDistribution::Npx { version, .. } | AgentDistribution::Binary { version, .. } => {
-                Some(*version)
-            }
+            AgentDistribution::Npx { version, .. }
+            | AgentDistribution::Binary { version, .. } => Some(*version),
+            AgentDistribution::SystemCommand { .. } => None,
         }
     }
 }
@@ -80,6 +85,7 @@ pub fn all_acp_agents() -> Vec<AgentType> {
         AgentType::OpenClaw,
         AgentType::OpenCode,
         AgentType::Cline,
+        AgentType::Hermes,
     ]
 }
 
@@ -91,6 +97,7 @@ pub fn registry_id_for(agent_type: AgentType) -> &'static str {
         AgentType::OpenClaw => "openclaw-acp",
         AgentType::OpenCode => "opencode",
         AgentType::Cline => "cline",
+        AgentType::Hermes => "hermes",
     }
 }
 
@@ -102,6 +109,7 @@ pub fn from_registry_id(id: &str) -> Option<AgentType> {
         "openclaw-acp" => Some(AgentType::OpenClaw),
         "opencode" => Some(AgentType::OpenCode),
         "cline" => Some(AgentType::Cline),
+        "hermes" => Some(AgentType::Hermes),
         _ => None,
     }
 }
@@ -236,6 +244,16 @@ pub fn get_agent_meta(agent_type: AgentType) -> AcpAgentMeta {
                         url: "https://github.com/anomalyco/opencode/releases/download/v1.14.23/opencode-windows-x64.zip",
                     },
                 ],
+            },
+        },
+        AgentType::Hermes => AcpAgentMeta {
+            agent_type,
+            name: "Hermes",
+            description: "Hermes AI assistant via SSH bridge",
+            distribution: AgentDistribution::SystemCommand {
+                cmd: "hermes",
+                args: &["acp"],
+                env: &[],
             },
         },
     }

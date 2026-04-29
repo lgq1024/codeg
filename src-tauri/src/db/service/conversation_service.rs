@@ -4,7 +4,7 @@ use sea_orm::{
     QueryFilter, QueryOrder, Set,
 };
 
-use crate::db::entities::{conversation, folder};
+use crate::db::entities::{conversation, conversation_turn, folder};
 use crate::db::error::DbError;
 use crate::models::{AgentType, DbConversationSummary};
 
@@ -92,6 +92,15 @@ pub async fn soft_delete(conn: &DatabaseConnection, conversation_id: i32) -> Res
         .one(conn)
         .await?
         .ok_or_else(|| DbError::Migration(format!("Conversation not found: {conversation_id}")))?;
+
+    // Hermes turns are stored only in DB (no local files); clean them up on delete.
+    if conv.agent_type == "hermes" {
+        conversation_turn::Entity::delete_many()
+            .filter(conversation_turn::Column::ConversationId.eq(conversation_id))
+            .exec(conn)
+            .await?;
+    }
+
     let mut active: conversation::ActiveModel = conv.into();
     active.deleted_at = Set(Some(Utc::now()));
     active.update(conn).await?;

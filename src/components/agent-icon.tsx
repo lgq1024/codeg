@@ -8,6 +8,7 @@ import {
   ClaudeCode,
   Cline,
   GeminiCLI,
+  NousResearch,
   OpenClaw,
   OpenCode,
 } from "@lobehub/icons"
@@ -70,6 +71,7 @@ const COLOR_ICONS: Partial<Record<AgentType, AnyIcon>> = {
 const MONO_ICONS: Partial<Record<AgentType, AnyIcon>> = {
   open_code: OpenCode,
   cline: Cline,
+  hermes: NousResearch,
 }
 
 // Text-color versions for Mono icons

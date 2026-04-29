@@ -5,7 +5,7 @@ use crate::app_error::AppCommandError;
 use crate::db::entities::conversation;
 #[cfg(feature = "tauri-runtime")]
 use crate::db::service::import_service;
-use crate::db::service::{conversation_service, folder_service};
+use crate::db::service::{conversation_service, conversation_turn_service, folder_service};
 #[cfg(feature = "tauri-runtime")]
 use crate::db::AppDatabase;
 use crate::models::*;
@@ -13,6 +13,7 @@ use crate::parsers::claude::ClaudeParser;
 use crate::parsers::cline::ClineParser;
 use crate::parsers::codex::CodexParser;
 use crate::parsers::gemini::GeminiParser;
+use crate::parsers::hermes::HermesParser;
 use crate::parsers::openclaw::OpenClawParser;
 use crate::parsers::opencode::OpenCodeParser;
 use crate::parsers::{path_eq_for_matching, AgentParser, ParseError};
@@ -72,6 +73,7 @@ fn list_conversations_sync(
         (AgentType::Gemini, Box::new(GeminiParser::new())),
         (AgentType::OpenClaw, Box::new(OpenClawParser::new())),
         (AgentType::Cline, Box::new(ClineParser::new())),
+        (AgentType::Hermes, Box::new(HermesParser::new())),
     ];
 
     for (at, parser) in &parsers {
@@ -173,6 +175,7 @@ pub async fn get_conversation(
             AgentType::Gemini => Box::new(GeminiParser::new()),
             AgentType::OpenClaw => Box::new(OpenClawParser::new()),
             AgentType::Cline => Box::new(ClineParser::new()),
+            AgentType::Hermes => Box::new(HermesParser::new()),
         };
 
         parser
@@ -288,6 +291,7 @@ pub async fn get_folder_conversation_core(
         .await
         .map_err(AppCommandError::from)?;
 
+    // 1. Try agent-specific local file parsers first.
     let (turns, session_stats, resolved_ext_id) = if let Some(ref ext_id) = summary.external_id {
         let at = summary.agent_type;
         let eid = ext_id.clone();
@@ -307,6 +311,7 @@ pub async fn get_folder_conversation_core(
                 AgentType::Gemini => Box::new(GeminiParser::new()),
                 AgentType::OpenClaw => Box::new(OpenClawParser::new()),
                 AgentType::Cline => Box::new(ClineParser::new()),
+                AgentType::Hermes => Box::new(HermesParser::new()),
             };
             match parser.get_conversation(&eid) {
                 Ok(d) => Ok((d.turns, d.session_stats, None)),
@@ -369,6 +374,15 @@ pub async fn get_folder_conversation_core(
         let _ = conversation_service::update_external_id(conn, conversation_id, new_ext_id).await;
     }
 
+    // 2. Fallback to codeg DB for agents without local file storage (e.g. Hermes).
+    let turns = if turns.is_empty() {
+        conversation_turn_service::get_turns(conn, conversation_id)
+            .await
+            .unwrap_or_default()
+    } else {
+        turns
+    };
+
     let mut summary = summary;
     summary.message_count = turns.len() as u32;
 
@@ -386,6 +400,18 @@ pub async fn get_folder_conversation(
     conversation_id: i32,
 ) -> Result<DbConversationDetail, AppCommandError> {
     get_folder_conversation_core(&db.conn, conversation_id).await
+}
+
+#[cfg(feature = "tauri-runtime")]
+#[cfg_attr(feature = "tauri-runtime", tauri::command)]
+pub async fn save_conversation_turns(
+    db: tauri::State<'_, AppDatabase>,
+    conversation_id: i32,
+    turns: Vec<MessageTurn>,
+) -> Result<(), AppCommandError> {
+    conversation_turn_service::save_turns(&db.conn, conversation_id, &turns)
+        .await
+        .map_err(AppCommandError::from)
 }
 
 /// Core logic for creating a conversation with git branch detection.

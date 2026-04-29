@@ -78,13 +78,18 @@ export function StatusBarConnection() {
   const agentType = activeConn?.agentType ?? null
 
   const model = useMemo(() => {
+    // Prefer real-time model from ACP connection (covers agents like Hermes
+    // that report model via session/new or session/load).
+    const connModel = activeConn?.modelId
+    if (connModel) return connModel
+
     const tab = tabs.find((t) => t.id === activeTabId)
     if (!tab || tab.kind !== "conversation") return null
     const conv = conversations.find(
       (c) => c.id === tab.conversationId && c.agent_type === tab.agentType
     )
     return conv?.model ?? null
-  }, [tabs, activeTabId, conversations])
+  }, [tabs, activeTabId, conversations, activeConn?.modelId])
 
   if (!agentType || !status || status === "disconnected") {
     return (

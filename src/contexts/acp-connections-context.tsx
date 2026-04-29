@@ -117,6 +117,7 @@ export interface ConnectionState {
   agentType: AgentType
   workingDir: string | null
   status: ConnectionStatus
+  modelId: string | null
   promptCapabilities: PromptCapabilitiesInfo
   supportsFork: boolean
   selectorsReady: boolean
@@ -259,6 +260,11 @@ type Action =
       contextKey: string
       configId: string
       valueId: string
+    }
+  | {
+      type: "MODEL_CHANGED"
+      contextKey: string
+      modelId: string | null
     }
   | {
       type: "PLAN_UPDATE"
@@ -670,6 +676,7 @@ function connectionsReducer(
         agentType: action.agentType,
         workingDir: action.workingDir,
         status: "connecting",
+        modelId: null,
         promptCapabilities: {
           image: false,
           audio: false,
@@ -703,6 +710,7 @@ function connectionsReducer(
       next.set(action.contextKey, {
         ...current,
         status: action.patch.status,
+        modelId: action.patch.modelId,
         sessionId: action.patch.sessionId,
         modes: action.patch.modes,
         configOptions: action.patch.configOptions,
@@ -1220,6 +1228,18 @@ function connectionsReducer(
       return next
     }
 
+    case "MODEL_CHANGED": {
+      const conn = state.get(action.contextKey)
+      if (!conn) return state
+      if (conn.modelId === action.modelId) return state
+      const next = new Map(state)
+      next.set(action.contextKey, {
+        ...conn,
+        modelId: action.modelId,
+      })
+      return next
+    }
+
     case "CONFIG_OPTION_CHANGED": {
       const conn = state.get(action.contextKey)
       if (!conn) return state
@@ -1554,6 +1574,12 @@ export function AcpConnectionsProvider({ children }: { children: ReactNode }) {
         reason: string
       }
 
+  const isInstalledAgentStatus = useCallback((agent: AcpAgentStatus): boolean => {
+    if (agent.installed_version) return true
+    if (agent.agent_type === "hermes") return agent.available
+    return false
+  }, [])
+
   const buildOpenAgentsSettingsAction = useCallback(
     (agentType?: AgentType): AlertAction => {
       const payload =
@@ -1593,7 +1619,7 @@ export function AcpConnectionsProvider({ children }: { children: ReactNode }) {
         }
       }
 
-      if (agent.installed_version) {
+      if (isInstalledAgentStatus(agent)) {
         return { kind: "none", reason: "" }
       }
 
@@ -1602,10 +1628,8 @@ export function AcpConnectionsProvider({ children }: { children: ReactNode }) {
         reason: t("blocked.sdkMissing", { agent: agentLabel }),
       }
     },
-    [t]
+    [isInstalledAgentStatus, t]
   )
-
-  // Activity tracking (no re-renders)
   const lastActivityRef = useRef(new Map<string, number>())
   const streamingQueueRef = useRef<StreamingAction[]>([])
   const flushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -2085,6 +2109,14 @@ export function AcpConnectionsProvider({ children }: { children: ReactNode }) {
             type: "MODE_CHANGED",
             contextKey,
             modeId: e.mode_id,
+          })
+          break
+        case "model_changed":
+          flushStreamingQueue()
+          dispatch({
+            type: "MODEL_CHANGED",
+            contextKey,
+            modelId: e.model_id ?? null,
           })
           break
         case "plan_update":

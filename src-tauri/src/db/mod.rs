@@ -28,7 +28,7 @@ pub async fn init_database(
     let app_data_dir = app_data_dir.as_ref();
     std::fs::create_dir_all(app_data_dir)?;
 
-    let db_path = app_data_dir.join("codeg.db");
+    let db_path = app_data_dir.join("codeg-dev.db");
     let db_url = format!(
         "sqlite:{}?mode=rwc",
         urlencoding::encode(&db_path.to_string_lossy())

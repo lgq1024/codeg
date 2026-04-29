@@ -11,9 +11,11 @@ use super::types::{MessageLevel, RichMessage};
 use crate::acp::manager::ConnectionManager;
 use crate::acp::registry::all_acp_agents;
 use crate::acp::types::PromptInputBlock;
+use chrono::Utc;
+
 use crate::db::entities::conversation;
-use crate::db::service::{conversation_service, folder_service, sender_context_service};
-use crate::models::agent::AgentType;
+use crate::db::service::{conversation_service, conversation_turn_service, folder_service, sender_context_service};
+use crate::models::{AgentType, ContentBlock, MessageTurn, TurnRole};
 use crate::web::event_bridge::EventEmitter;
 
 pub struct FollowupRequest<'a> {
@@ -298,10 +300,25 @@ pub async fn handle_task(
         }
     };
 
-    // 5. Spawn ACP agent
+    // 5a. Save user turn to DB
+    let user_turn = MessageTurn {
+        id: uuid::Uuid::new_v4().to_string(),
+        role: TurnRole::User,
+        blocks: vec![ContentBlock::Text {
+            text: task_description.to_string(),
+        }],
+        timestamp: Utc::now(),
+        usage: None,
+        duration_ms: None,
+        model: None,
+    };
+    let _ = conversation_turn_service::append_turn(db, conv.id, &user_turn).await;
+
+    // 5b. Spawn ACP agent
     let owner_label = format!("chat_channel:{}:{}", channel_id, sender_id);
     let connection_id = match conn_mgr
         .spawn_agent(
+            db,
             agent_type,
             Some(folder.path.clone()),
             None,
@@ -480,6 +497,7 @@ pub async fn handle_resume(
     let owner_label = format!("chat_channel:{}:{}", channel_id, sender_id);
     let connection_id = match conn_mgr
         .spawn_agent(
+            db,
             conv.agent_type,
             Some(folder.path.clone()),
             conv.external_id.clone(),
@@ -719,6 +737,22 @@ pub async fn handle_followup(req: FollowupRequest<'_>) -> RichMessage {
             "{}{e}",
             i18n::failed_to_send_message_label(req.lang)
         ));
+    }
+
+    // Save user turn to DB
+    if let Some(conv_id) = ctx.current_conversation_id {
+        let user_turn = MessageTurn {
+            id: uuid::Uuid::new_v4().to_string(),
+            role: TurnRole::User,
+            blocks: vec![ContentBlock::Text {
+                text: req.text.to_string(),
+            }],
+            timestamp: Utc::now(),
+            usage: None,
+            duration_ms: None,
+            model: None,
+        };
+        let _ = conversation_turn_service::append_turn(req.db, conv_id, &user_turn).await;
     }
 
     RichMessage::info(i18n::message_sent(req.lang))

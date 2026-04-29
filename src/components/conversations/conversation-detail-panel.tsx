@@ -88,6 +88,7 @@ import {
 interface ConversationTabViewProps {
   tabId: string
   conversationId: number | null
+  runtimeConversationId?: number
   agentType: AgentType
   workingDir?: string
   isActive: boolean
@@ -152,6 +153,7 @@ function buildVirtualConversationId(seed: string): number {
 const ConversationTabView = memo(function ConversationTabView({
   tabId,
   conversationId,
+  runtimeConversationId,
   agentType,
   workingDir,
   isActive,
@@ -168,6 +170,7 @@ const ConversationTabView = memo(function ConversationTabView({
   const { setSessionStats } = useSessionStats()
   const {
     appendOptimisticTurn,
+    clearEphemeralState,
     completeTurn,
     getSession,
     refetchDetail,
@@ -181,9 +184,14 @@ const ConversationTabView = memo(function ConversationTabView({
 
   // Stable runtime session key — set once at mount, never changes.
   // For new conversations this is a virtual (negative) ID; for existing
-  // conversations opened from the sidebar it equals the real DB ID.
+  // conversations reopened after a persisted runtime migration, prefer the
+  // tab's saved runtimeConversationId so render/fetch/event wiring all hit
+  // the same runtime session key.
   const [effectiveConversationId] = useState(
-    () => conversationId ?? buildVirtualConversationId(`draft-${tabId}`)
+    () =>
+      runtimeConversationId ??
+      conversationId ??
+      buildVirtualConversationId(`draft-${tabId}`)
   )
   const [createdConversationId, setCreatedConversationId] = useState<
     number | null
@@ -252,13 +260,17 @@ const ConversationTabView = memo(function ConversationTabView({
 
   const runtimeSession = getSession(effectiveConversationId)
   const effectiveSessionStats = runtimeSession?.sessionStats ?? null
+  const runtimeDetail = runtimeSession?.detail ?? null
+  const effectiveDetail = detail ?? runtimeDetail
+  const effectiveDetailLoading = detailLoading && runtimeDetail == null
+  const effectiveDetailError = detailError
 
   useEffect(() => {
     if (!isActive) return
     setSessionStats(effectiveSessionStats)
   }, [effectiveSessionStats, isActive, setSessionStats])
 
-  const externalId = detail?.summary.external_id ?? undefined
+  const externalId = effectiveDetail?.summary.external_id ?? undefined
   // For persisted conversations opened from the sidebar, wait until the
   // session's external_id has been resolved before auto-connecting.
   // Otherwise the auto-connect effect fires with sessionId=undefined and
@@ -266,7 +278,10 @@ const ConversationTabView = memo(function ConversationTabView({
   // context. cline doesn't support session resume, so it connects
   // immediately regardless.
   const awaitingHistoricalSessionId =
-    hasPersistedConversation && selectedAgent !== "cline" && detailLoading
+    hasPersistedConversation &&
+    selectedAgent !== "cline" &&
+    effectiveDetail == null &&
+    effectiveDetailLoading
   const canAutoConnect =
     (hasPersistedConversation || (agentsLoaded && usableAgentCount > 0)) &&
     !awaitingHistoricalSessionId
@@ -435,8 +450,26 @@ const ConversationTabView = memo(function ConversationTabView({
 
   useEffect(() => {
     if (effectiveConversationId <= 0) return
-    setExternalId(effectiveConversationId, detail?.summary.external_id ?? null)
-  }, [effectiveConversationId, detail?.summary.external_id, setExternalId])
+    setExternalId(
+      effectiveConversationId,
+      effectiveDetail?.summary.external_id ?? null
+    )
+  }, [effectiveConversationId, effectiveDetail?.summary.external_id, setExternalId])
+
+  useEffect(() => {
+    if (connStatus === "prompting") return
+    if (effectiveDetailLoading) return
+    if (connSessionId) return
+    if (effectiveDetail?.summary.external_id) return
+    clearEphemeralState(effectiveConversationId)
+  }, [
+    clearEphemeralState,
+    connSessionId,
+    connStatus,
+    effectiveDetail?.summary.external_id,
+    effectiveDetailLoading,
+    effectiveConversationId,
+  ])
 
   useEffect(() => {
     if (!connSessionId) return
@@ -670,8 +703,8 @@ const ConversationTabView = memo(function ConversationTabView({
   // or fall back to the DB detail summary.
   const conversationTitle = useMemo(() => {
     const tabTitle = tabs.find((tab) => tab.id === tabId)?.title
-    return tabTitle || detail?.summary.title || null
-  }, [tabs, tabId, detail?.summary.title])
+    return tabTitle || effectiveDetail?.summary.title || null
+  }, [tabs, tabId, effectiveDetail?.summary.title])
 
   const handleForkSend = useCallback(
     async (draft: PromptDraft, selectedModeIdArg?: string | null) => {
@@ -861,8 +894,8 @@ const ConversationTabView = memo(function ConversationTabView({
       isActive={isActive}
       sendSignal={sendSignal}
       sessionStats={effectiveSessionStats}
-      detailLoading={detailLoading}
-      detailError={detailError}
+      detailLoading={effectiveDetailLoading}
+      detailError={effectiveDetailError}
       hideEmptyState={!hasPersistedConversation || hasSentMessage}
     />
   )
@@ -1343,6 +1376,7 @@ export function ConversationDetailPanel() {
         <ConversationTabView
           tabId={tab.id}
           conversationId={tab.conversationId}
+          runtimeConversationId={tab.runtimeConversationId}
           agentType={tab.agentType}
           workingDir={tab.workingDir ?? getFolder(tab.folderId)?.path}
           isActive={active}

@@ -174,6 +174,15 @@ pub(crate) fn verify_agent_installed(agent_type: AgentType) -> Result<(), AcpErr
             }
             Ok(())
         }
+        registry::AgentDistribution::SystemCommand { cmd, .. } => {
+            if !is_cmd_available(cmd) {
+                return Err(AcpError::SdkNotInstalled(format!(
+                    "{} is not installed. Please install it in Agent Settings.",
+                    meta.name
+                )));
+            }
+            Ok(())
+        }
     }
 }
 
@@ -243,6 +252,12 @@ async fn detect_local_version(agent_type: AgentType) -> Option<String> {
             binary_cache::detect_installed_version(agent_type, cmd)
                 .ok()
                 .flatten()
+        }
+        registry::AgentDistribution::SystemCommand { cmd, .. } => {
+            if !is_cmd_available(cmd) {
+                return None;
+            }
+            None
         }
     }
 }
@@ -1441,6 +1456,7 @@ pub(crate) fn skill_storage_spec(agent_type: AgentType) -> Option<SkillStorageSp
                 ".claude/skills",
             ],
         }),
+        AgentType::Hermes => None,
     }
 }
 
@@ -1863,8 +1879,8 @@ fn cascade_update_agent_config(
                 serde_json::to_string(&patch).map_err(|e| AcpError::protocol(e.to_string()))?;
             persist_agent_local_config_json(agent_type, Some(&patch_str))?;
         }
-        AgentType::OpenClaw => {
-            // agent_local_config_path returns None for OpenClaw — no-op
+        AgentType::OpenClaw | AgentType::Hermes => {
+            // agent_local_config_path returns None for these agents — no-op
         }
         AgentType::Codex => {
             let auth_path = codex_auth_json_path();
@@ -2045,6 +2061,7 @@ pub async fn acp_connect(
     let emitter = EventEmitter::Tauri(app_handle);
     manager
         .spawn_agent(
+            &db.conn,
             agent_type,
             working_dir,
             session_id,
@@ -2066,7 +2083,7 @@ pub async fn acp_prompt(
     manager: State<'_, ConnectionManager>,
 ) -> Result<(), AcpError> {
     manager
-        .send_prompt_linked(&db, &connection_id, blocks, folder_id, conversation_id)
+        .send_prompt_linked(&db.conn, &connection_id, blocks, folder_id, conversation_id)
         .await
 }
 
@@ -2213,6 +2230,9 @@ pub(crate) async fn acp_get_agent_status_core(
                 .flatten();
             (platforms.iter().any(|p| p.platform == platform), detected)
         }
+        registry::AgentDistribution::SystemCommand { cmd, .. } => {
+            (is_cmd_available(cmd), None)
+        }
     };
 
     Ok(crate::acp::types::AcpAgentStatus {
@@ -2274,6 +2294,9 @@ pub(crate) async fn acp_list_agents_core(db: &AppDatabase) -> Result<Vec<AcpAgen
                     "binary",
                     detected,
                 )
+            }
+            registry::AgentDistribution::SystemCommand { cmd, .. } => {
+                (is_cmd_available(cmd), "system_command", None)
             }
         };
 
@@ -2721,7 +2744,8 @@ pub(crate) async fn acp_download_agent_binary_core(
             emit_acp_agents_updated(emitter, "binary_downloaded", Some(agent_type));
             Ok(())
         }
-        registry::AgentDistribution::Npx { .. } => Err(AcpError::protocol(
+        registry::AgentDistribution::Npx { .. }
+        | registry::AgentDistribution::SystemCommand { .. } => Err(AcpError::protocol(
             "download is only supported for binary agents",
         )),
     };
@@ -2878,7 +2902,8 @@ pub(crate) async fn acp_prepare_npx_agent_core(
             emit_acp_agents_updated(emitter, "npx_prepared", Some(agent_type));
             Ok(resolved)
         }
-        registry::AgentDistribution::Binary { .. } => Err(AcpError::protocol(
+        registry::AgentDistribution::Binary { .. }
+        | registry::AgentDistribution::SystemCommand { .. } => Err(AcpError::protocol(
             "prepare is only supported for npx agents",
         )),
     };
@@ -2966,6 +2991,11 @@ pub(crate) async fn acp_uninstall_agent_core(
             }
             registry::AgentDistribution::Npx { package, .. } => {
                 uninstall_npm_global_package(package).await?;
+            }
+            registry::AgentDistribution::SystemCommand { .. } => {
+                return Err(AcpError::protocol(
+                    "uninstall is not supported for system command agents",
+                ));
             }
         }
 

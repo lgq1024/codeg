@@ -136,6 +136,13 @@ export async function acpSetMode(
   return getTransport().call("acp_set_mode", { connectionId, modeId })
 }
 
+export async function acpSetModel(
+  connectionId: string,
+  modelId: string
+): Promise<void> {
+  return getTransport().call("acp_set_model", { connectionId, modelId })
+}
+
 export async function acpSetConfigOption(
   connectionId: string,
   configId: string,

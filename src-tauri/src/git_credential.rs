@@ -89,7 +89,7 @@ pub fn run_credential_helper() {
         None => return,
     };
 
-    let db_path = app_data_dir.join("codeg.db");
+    let db_path = app_data_dir.join("codeg-dev.db");
     if !db_path.exists() {
         return;
     }

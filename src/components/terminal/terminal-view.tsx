@@ -151,7 +151,7 @@ export function TerminalView({
       const term = new Terminal({
         cursorBlink: true,
         fontSize: computeTerminalFontSize(zoomLevelRef.current),
-        fontFamily: "Menlo, Monaco, 'Courier New', monospace",
+        fontFamily: 'var(--font-mono)',
         theme: getTerminalTheme(containerRef.current),
         allowProposedApi: true,
       })

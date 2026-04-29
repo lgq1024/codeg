@@ -30,7 +30,7 @@ use tokio::sync::{mpsc, RwLock};
 use crate::acp::error::AcpError;
 use crate::acp::file_system_runtime::{FileSystemRuntime, FileSystemRuntimeError};
 use crate::acp::registry::{self, AgentDistribution};
-use crate::acp::session_state::SessionState;
+use crate::acp::session_state::{LiveContentBlock, SessionState};
 use crate::acp::terminal_runtime::{TerminalRuntime, TerminalRuntimeError};
 use crate::acp::types::{
     AcpEvent, AvailableCommandInfo, ConnectionInfo, ConnectionStatus, PermissionOptionInfo,
@@ -38,9 +38,12 @@ use crate::acp::types::{
     SessionConfigOptionInfo, SessionConfigSelectGroupInfo, SessionConfigSelectInfo,
     SessionConfigSelectOptionInfo, SessionModeInfo, SessionModeStateInfo,
 };
+use crate::db::service::conversation_turn_service;
 use crate::models::agent::AgentType;
+use crate::models::message::{ContentBlock as ModelContentBlock, MessageTurn, TurnRole};
 use crate::network::proxy;
 use crate::web::event_bridge::{emit_with_state, EventEmitter};
+use chrono::Utc;
 
 const DEFAULT_COMMAND_COLOR_ENV: [(&str, &str); 1] = [("CLICOLOR_FORCE", "1")];
 
@@ -353,6 +356,43 @@ async fn build_agent(
                 ),
             )
         }
+        AgentDistribution::SystemCommand { cmd, args, env } => {
+            if !crate::commands::acp::is_cmd_available(cmd) {
+                return Err(AcpError::SdkNotInstalled(format!(
+                    "{} is not installed. Please install it in Agent Settings.",
+                    meta.name
+                )));
+            }
+
+            let merged_env = merge_agent_env(env, runtime_env);
+            let mut parts: Vec<String> = Vec::new();
+            for (k, v) in &merged_env {
+                parts.push(format!("{k}={v}"));
+            }
+            parts.push(
+                which::which(cmd)
+                    .map(|p| p.to_string_lossy().to_string())
+                    .unwrap_or_else(|_| {
+                        crate::process::normalized_program(cmd)
+                            .to_string_lossy()
+                            .to_string()
+                    }),
+            );
+            for a in args {
+                parts.push((*a).into());
+            }
+            let refs: Vec<&str> = parts.iter().map(|s| s.as_str()).collect();
+            let agent_name = meta.name.to_string();
+            AcpAgent::from_args(&refs)
+                .map(|a| {
+                    a.with_debug(move |line, dir| {
+                        if dir == sacp_tokio::LineDirection::Stderr {
+                            eprintln!("[ACP][{agent_name}][stderr] {line}");
+                        }
+                    })
+                })
+                .map_err(|e| AcpError::SpawnFailed(e.to_string()))
+        }
     }
 }
 
@@ -365,6 +405,7 @@ async fn build_agent(
 /// leaks stale entries after a connection tears down.
 #[allow(clippy::too_many_arguments)]
 pub async fn spawn_agent_connection(
+    db: sea_orm::DatabaseConnection,
     connection_id: String,
     agent_type: AgentType,
     working_dir: Option<String>,
@@ -437,6 +478,7 @@ pub async fn spawn_agent_connection(
         };
 
         let result = run_connection(
+            db,
             agent,
             conn_id.clone(),
             agent_type,
@@ -772,6 +814,7 @@ fn build_load_session_request(
 /// The main ACP connection loop.
 #[allow(clippy::too_many_arguments)]
 async fn run_connection(
+    db: sea_orm::DatabaseConnection,
     agent: AcpAgent,
     connection_id: String,
     agent_type: AgentType,
@@ -1084,6 +1127,7 @@ async fn run_connection(
                         emit_selectors_ready(&state, &emitter_clone).await;
 
                         let loop_result = run_conversation_loop(
+                            &db,
                             &mut session,
                             &conn_id,
                             &emitter_clone,
@@ -1099,6 +1143,7 @@ async fn run_connection(
                         terminal_runtime.release_all_for_session(&sid).await;
                         drop(session);
                         handle_fork_or_exit(
+                            &db,
                             loop_result,
                             &conn_id,
                             &emitter_clone,
@@ -1168,6 +1213,7 @@ async fn run_connection(
                         emit_selectors_ready(&state, &emitter_clone).await;
 
                         let loop_result = run_conversation_loop(
+                            &db,
                             &mut session,
                             &conn_id,
                             &emitter_clone,
@@ -1185,6 +1231,7 @@ async fn run_connection(
                             .await;
                         drop(session);
                         handle_fork_or_exit(
+                            &db,
                             loop_result,
                             &conn_id,
                             &emitter_clone,
@@ -1227,6 +1274,7 @@ async fn run_connection(
                 emit_selectors_ready(&state, &emitter_clone).await;
 
                 let loop_result = run_conversation_loop(
+                    &db,
                     &mut session,
                     &conn_id,
                     &emitter_clone,
@@ -1242,6 +1290,7 @@ async fn run_connection(
                 terminal_runtime.release_all_for_session(&sid).await;
                 drop(session);
                 handle_fork_or_exit(
+                    &db,
                     loop_result,
                     &conn_id,
                     &emitter_clone,
@@ -1373,7 +1422,16 @@ async fn set_session_mode(
         .block_task()
         .await?;
 
-    emit_with_state(state, emitter, AcpEvent::ModeChanged { mode_id }).await;
+    let connection_id = { state.read().await.connection_id.clone() };
+    emit_with_state(
+        state,
+        emitter,
+        AcpEvent::ModeChanged {
+            connection_id,
+            mode_id,
+        },
+    )
+    .await;
 
     Ok(())
 }
@@ -2006,6 +2064,7 @@ struct ForkExitInfo {
 /// just created in-memory by the agent on this connection.
 #[allow(clippy::too_many_arguments)]
 async fn handle_fork_or_exit(
+    db: &sea_orm::DatabaseConnection,
     loop_result: Result<Option<ForkExitInfo>, sacp::Error>,
     conn_id: &str,
     emitter: &EventEmitter,
@@ -2060,6 +2119,7 @@ async fn handle_fork_or_exit(
     emit_selectors_ready(state, emitter).await;
 
     let loop_result = run_conversation_loop(
+        db,
         &mut session,
         conn_id,
         emitter,
@@ -2077,6 +2137,7 @@ async fn handle_fork_or_exit(
 
     // Recursively handle nested forks
     Box::pin(handle_fork_or_exit(
+        db,
         loop_result,
         conn_id,
         emitter,
@@ -2097,6 +2158,7 @@ async fn handle_fork_or_exit(
 /// `Ok(Some(ForkExitInfo))` when the loop should be restarted on a forked session.
 #[allow(clippy::too_many_arguments)]
 async fn run_conversation_loop<'a>(
+    db: &sea_orm::DatabaseConnection,
     session: &mut sacp::ActiveSession<'a, Agent>,
     conn_id: &str,
     emitter: &EventEmitter,
@@ -2149,6 +2211,35 @@ async fn run_conversation_loop<'a>(
         };
         match cmd {
             Some(ConnectionCommand::Prompt { blocks }) => {
+                // Persist user turn if conversation is linked (before map_prompt_blocks moves blocks).
+                if let Some(conv_id) = state.read().await.conversation_id {
+                    let user_text: String = blocks
+                        .iter()
+                        .filter_map(|b| match b {
+                            PromptInputBlock::Text { text } => Some(text.as_str()),
+                            _ => None,
+                        })
+                        .collect::<Vec<_>>()
+                        .join("\n");
+                    if !user_text.is_empty() {
+                        let user_turn = MessageTurn {
+                            id: uuid::Uuid::new_v4().to_string(),
+                            role: TurnRole::User,
+                            blocks: vec![ModelContentBlock::Text { text: user_text }],
+                            timestamp: Utc::now(),
+                            usage: None,
+                            duration_ms: None,
+                            model: None,
+                        };
+                        let _ = conversation_turn_service::append_turn(
+                            db,
+                            conv_id,
+                            &user_turn,
+                        )
+                        .await;
+                    }
+                }
+
                 let prompt_blocks = map_prompt_blocks(blocks);
                 if prompt_blocks.is_empty() {
                     emit_with_state(
@@ -2258,6 +2349,9 @@ async fn run_conversation_loop<'a>(
                                         )
                                         .await;
                                     }
+                                    // Persist assistant turn before emitting TurnComplete
+                                    // (which clears live_message via apply_event).
+                                    persist_assistant_turn(db, state, agent_type).await;
                                     let reason_str = match reason {
                                         StopReason::EndTurn => "end_turn",
                                         StopReason::Cancelled => "cancelled",
@@ -2290,6 +2384,9 @@ async fn run_conversation_loop<'a>(
                                 )
                                 .await;
                             }
+                            // Persist assistant turn before emitting TurnComplete
+                            // (which clears live_message via apply_event).
+                            persist_assistant_turn(db, state, agent_type).await;
                             let reason_str = match reason {
                                 StopReason::EndTurn => "end_turn",
                                 StopReason::Cancelled => "cancelled",
@@ -2334,10 +2431,14 @@ async fn run_conversation_loop<'a>(
                                     let req = SetSessionModeRequest::new(sid.clone(), mode_id.clone());
                                     match cx.send_request_to(Agent, req).block_task().await {
                                         Ok(_) => {
+                                            let connection_id = { state.read().await.connection_id.clone() };
                                             emit_with_state(
                                                 state,
                                                 emitter,
-                                                AcpEvent::ModeChanged { mode_id },
+                                                AcpEvent::ModeChanged {
+                                                    connection_id,
+                                                    mode_id,
+                                                },
                                             )
                                             .await;
                                         }
@@ -2402,6 +2503,8 @@ async fn run_conversation_loop<'a>(
                                             RequestPermissionOutcome::Cancelled,
                                         ));
                                     }
+                                    // Persist partial assistant turn before clearing.
+                                    persist_assistant_turn(db, state, agent_type).await;
                                     // Immediately emit TurnComplete so the frontend
                                     // transitions out of "prompting" and the user can
                                     // send new messages.  Don't wait for the agent --
@@ -2568,6 +2671,54 @@ async fn run_conversation_loop<'a>(
         }
     }
     Ok(None)
+}
+
+/// Persist the current assistant `live_message` to the DB as a turn.
+/// Called immediately before emitting `TurnComplete` so the content is
+/// captured before `apply_event` clears `live_message`.
+async fn persist_assistant_turn(
+    db: &sea_orm::DatabaseConnection,
+    state: &Arc<RwLock<SessionState>>,
+    agent_type: AgentType,
+) {
+    let (conv_id, blocks) = {
+        let s = state.read().await;
+        let conv_id = s.conversation_id;
+        let blocks = s.live_message.as_ref().map(|lm| {
+            lm.content
+                .iter()
+                .filter_map(|block| match block {
+                    LiveContentBlock::Text { text } => {
+                        Some(ModelContentBlock::Text { text: text.clone() })
+                    }
+                    LiveContentBlock::Thinking { text } => {
+                        Some(ModelContentBlock::Thinking { text: text.clone() })
+                    }
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+        }).unwrap_or_default();
+        (conv_id, blocks)
+    };
+    if let Some(cid) = conv_id {
+        if !blocks.is_empty() {
+            let assistant_turn = MessageTurn {
+                id: uuid::Uuid::new_v4().to_string(),
+                role: TurnRole::Assistant,
+                blocks,
+                timestamp: Utc::now(),
+                usage: None,
+                duration_ms: None,
+                model: Some(agent_type.to_string()),
+            };
+            let _ = conversation_turn_service::append_turn(
+                &db,
+                cid,
+                &assistant_turn,
+            )
+            .await;
+        }
+    }
 }
 
 /// Serialize a Vec<ToolCallContent> into a human-readable text string.
@@ -2912,10 +3063,12 @@ async fn emit_conversation_update(
             .await;
         }
         SessionUpdate::CurrentModeUpdate(update) => {
+            let connection_id = { state.read().await.connection_id.clone() };
             emit_with_state(
                 state,
                 emitter,
                 AcpEvent::ModeChanged {
+                    connection_id,
                     mode_id: update.current_mode_id.to_string(),
                 },
             )

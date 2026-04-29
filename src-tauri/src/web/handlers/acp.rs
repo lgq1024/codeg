@@ -101,6 +101,7 @@ pub async fn acp_connect(
     let emitter = state.emitter.clone();
     let connection_id = manager
         .spawn_agent(
+            &db.conn,
             params.agent_type,
             params.working_dir,
             params.session_id,
@@ -165,7 +166,7 @@ pub async fn acp_prompt(
     state
         .connection_manager
         .send_prompt_linked(
-            &state.db,
+            &state.db.conn,
             &params.connection_id,
             params.blocks,
             params.folder_id,

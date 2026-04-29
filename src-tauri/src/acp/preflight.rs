@@ -64,6 +64,9 @@ pub async fn run_preflight(agent_type: AgentType) -> PreflightResult {
             platforms,
             ..
         } => check_binary_environment(agent_type, version, cmd, platforms).await,
+        AgentDistribution::SystemCommand { cmd, .. } => {
+            check_system_command_environment(cmd).await
+        }
     };
 
     let passed = checks
@@ -458,6 +461,30 @@ async fn check_binary_environment(
             }
         }
     }
+
+    checks
+}
+
+async fn check_system_command_environment(cmd: &str) -> Vec<CheckItem> {
+    let mut checks = Vec::new();
+
+    let cmd_check = match which::which(cmd) {
+        Ok(path) => CheckItem {
+            check_id: "command_available".into(),
+            label: format!("Command: {cmd}"),
+            status: CheckStatus::Pass,
+            message: format!("{} found at {}", cmd, path.display()),
+            fixes: vec![],
+        },
+        Err(_) => CheckItem {
+            check_id: "command_available".into(),
+            label: format!("Command: {cmd}"),
+            status: CheckStatus::Fail,
+            message: format!("{cmd} is not installed or not in PATH"),
+            fixes: vec![],
+        },
+    };
+    checks.push(cmd_check);
 
     checks
 }

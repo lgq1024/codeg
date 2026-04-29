@@ -26,6 +26,7 @@ import type {
  */
 export interface SnapshotPatch {
   status: ConnectionStatus
+  modelId: string | null
   sessionId: string | null
   modes: SessionModeStateInfo | null
   configOptions: SessionConfigOptionInfo[] | null
@@ -53,6 +54,7 @@ export function denormalizeSnapshot(wire: LiveSessionSnapshot): SnapshotPatch {
 
   return {
     status: wire.status,
+    modelId: wire.model_id ?? null,
     sessionId: wire.external_id,
     modes: wire.modes,
     configOptions: wire.config_options,

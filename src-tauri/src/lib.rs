@@ -313,6 +313,7 @@ mod tauri_app {
                 conversations::update_conversation_title,
                 conversations::update_conversation_external_id,
                 conversations::delete_conversation,
+                conversations::save_conversation_turns,
                 folders::load_folder_history,
                 folders::get_folder,
                 folders::list_open_folder_details,

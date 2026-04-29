@@ -138,9 +138,9 @@ pub struct SessionState {
     pub active_tool_calls: BTreeMap<String, ToolCallState>,
     pub pending_permission: Option<PendingPermissionState>,
 
-    // ACP 协商出的能力
     pub modes: Option<SessionModeStateInfo>,
     pub current_mode: Option<String>,
+    pub model_id: Option<String>,
     pub config_options: Option<Vec<SessionConfigOptionInfo>>,
     pub prompt_capabilities: Option<PromptCapabilitiesInfo>,
     pub fork_supported: bool,
@@ -191,6 +191,7 @@ impl SessionState {
             pending_permission: None,
             modes: None,
             current_mode: None,
+            model_id: None,
             config_options: None,
             prompt_capabilities: None,
             fork_supported: false,
@@ -239,8 +240,17 @@ impl SessionState {
                 self.current_mode = Some(modes.current_mode_id.clone());
                 self.modes = Some(modes.clone());
             }
-            AcpEvent::ModeChanged { mode_id } => {
+            AcpEvent::ModeChanged {
+                connection_id: _,
+                mode_id,
+            } => {
                 self.current_mode = Some(mode_id.clone());
+            }
+            AcpEvent::ModelChanged {
+                connection_id: _,
+                model_id,
+            } => {
+                self.model_id = Some(model_id.clone());
             }
             AcpEvent::SessionConfigOptions { config_options } => {
                 self.config_options = Some(config_options.clone());
@@ -410,6 +420,16 @@ impl SessionState {
     fn append_text_delta(&mut self, text: &str) {
         let live = self.ensure_live_message();
         if let Some(LiveContentBlock::Text { text: existing }) = live.content.last_mut() {
+            if text == existing {
+                // Exact duplicate chunk (e.g. Hermes reconnect replay), skip
+                return;
+            }
+            if text.starts_with(existing.as_str()) && text.len() > existing.len() {
+                // Agent sent a cumulative snapshot instead of a delta;
+                // replace with the full text to avoid duplicate accumulation.
+                *existing = text.to_string();
+                return;
+            }
             existing.push_str(text);
         } else {
             live.content.push(LiveContentBlock::Text {
@@ -421,6 +441,13 @@ impl SessionState {
     fn append_thinking_delta(&mut self, text: &str) {
         let live = self.ensure_live_message();
         if let Some(LiveContentBlock::Thinking { text: existing }) = live.content.last_mut() {
+            if text == existing {
+                return;
+            }
+            if text.starts_with(existing.as_str()) && text.len() > existing.len() {
+                *existing = text.to_string();
+                return;
+            }
             existing.push_str(text);
         } else {
             live.content.push(LiveContentBlock::Thinking {
@@ -525,6 +552,7 @@ impl SessionState {
             conversation_id: self.conversation_id,
             folder_id: self.folder_id,
             status: self.status.clone(),
+            model_id: self.model_id.clone(),
             external_id: self.external_id.clone(),
             live_message: self.live_message.clone(),
             active_tool_calls: self.active_tool_calls.values().cloned().collect(),
@@ -549,6 +577,7 @@ pub struct LiveSessionSnapshot {
     pub conversation_id: Option<i32>,
     pub folder_id: Option<i32>,
     pub status: ConnectionStatus,
+    pub model_id: Option<String>,
     pub external_id: Option<String>,
     pub live_message: Option<LiveMessage>,
     pub active_tool_calls: Vec<ToolCallState>,
@@ -1058,6 +1087,7 @@ mod tests {
         assert_eq!(s.current_mode.as_deref(), Some("default"));
         assert!(s.modes.is_some());
         s.apply_event(&AcpEvent::ModeChanged {
+            connection_id: s.connection_id.clone(),
             mode_id: "edit".into(),
         });
         assert_eq!(s.current_mode.as_deref(), Some("edit"));

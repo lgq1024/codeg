@@ -12,7 +12,7 @@ use crate::acp::types::{
 };
 use crate::db::entities::conversation::ConversationStatus;
 use crate::db::service::conversation_service;
-use crate::db::AppDatabase;
+use sea_orm::DatabaseConnection;
 use crate::models::agent::AgentType;
 use crate::web::event_bridge::{emit_with_state, EventEmitter};
 
@@ -133,6 +133,7 @@ impl ConnectionManager {
 
     pub async fn spawn_agent(
         &self,
+        db: &sea_orm::DatabaseConnection,
         agent_type: AgentType,
         working_dir: Option<String>,
         session_id: Option<String>,
@@ -199,6 +200,7 @@ impl ConnectionManager {
         // a cleanup hook, and returns the rx half of the signal. Any spawn
         // failure short-circuits before we touch the rx wait.
         let session_started_rx = spawn_agent_connection(
+            db.clone(),
             connection_id.clone(),
             agent_type,
             working_dir,
@@ -418,7 +420,7 @@ impl ConnectionManager {
     /// `folder_id` and `conversation_id` and just forward the prompt.
     pub async fn send_prompt_linked(
         &self,
-        db: &AppDatabase,
+        db: &DatabaseConnection,
         conn_id: &str,
         blocks: Vec<PromptInputBlock>,
         folder_id: Option<i32>,
@@ -487,7 +489,7 @@ impl ConnectionManager {
                 // contract violations.
                 (None, Some(folder_id)) => {
                     let row = conversation_service::create(
-                        &db.conn,
+                        &db,
                         folder_id,
                         agent_type,
                         None,
@@ -524,7 +526,7 @@ impl ConnectionManager {
         // on the row (touches `updated_at` only).
         let conversation_id_for_status = state_arc.read().await.conversation_id;
         if let Some(cid) = conversation_id_for_status {
-            conversation_service::update_status(&db.conn, cid, ConversationStatus::InProgress)
+            conversation_service::update_status(&db, cid, ConversationStatus::InProgress)
                 .await
                 .map_err(|e| AcpError::protocol(e.to_string()))?;
             emit_with_state(
@@ -551,7 +553,7 @@ impl ConnectionManager {
             Err(send_err) => {
                 if let Some(cid) = conversation_id_for_status {
                     match conversation_service::update_status(
-                        &db.conn,
+                        &db,
                         cid,
                         ConversationStatus::Cancelled,
                     )
@@ -994,7 +996,7 @@ mod tests {
         use crate::db::entities::conversation;
         use sea_orm::EntityTrait;
         conversation::Entity::find()
-            .all(&db.conn)
+            .all(&db)
             .await
             .unwrap()
             .len()
@@ -1007,7 +1009,7 @@ mod tests {
         let folder_id = test_helpers::seed_folder(&db, "/tmp/caller-id").await;
         // Pre-create a conversation row the caller will reference.
         let pre_existing = conversation_service::create(
-            &db.conn,
+            &db,
             folder_id,
             AgentType::ClaudeCode,
             None,
@@ -1093,7 +1095,7 @@ mod tests {
         let db = test_helpers::fresh_in_memory_db().await;
         let folder_id = test_helpers::seed_folder(&db, "/tmp/already").await;
         let pre = conversation_service::create(
-            &db.conn,
+            &db,
             folder_id,
             AgentType::ClaudeCode,
             None,
@@ -1249,7 +1251,7 @@ mod tests {
         // intermediate InProgress write is observable only via the event,
         // not by the time the test reads the row.
         let row = conversation::Entity::find_by_id(conv_id)
-            .one(&db.conn)
+            .one(&db)
             .await
             .unwrap()
             .expect("conversation row exists");
@@ -1259,7 +1261,7 @@ mod tests {
         // and then Cancelled (same send-failure rollback). Pre-flip the row
         // to PendingReview to observe the transition flip forward — mirrors
         // the "follow-up turn after a TurnComplete" scenario.
-        conversation_service::update_status(&db.conn, conv_id, ConversationStatus::PendingReview)
+        conversation_service::update_status(&db, conv_id, ConversationStatus::PendingReview)
             .await
             .unwrap();
 
@@ -1294,7 +1296,7 @@ mod tests {
             ),
         }
         let row2 = conversation::Entity::find_by_id(conv_id)
-            .one(&db.conn)
+            .one(&db)
             .await
             .unwrap()
             .unwrap();
@@ -1805,7 +1807,7 @@ mod tests {
 
         // DB row settles at Cancelled — final ground truth read.
         let row = conversation::Entity::find_by_id(conv_id)
-            .one(&db.conn)
+            .one(&db)
             .await
             .unwrap()
             .expect("conversation row exists");

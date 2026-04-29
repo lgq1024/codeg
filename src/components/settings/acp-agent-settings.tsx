@@ -3244,7 +3244,9 @@ export function AcpAgentSettings() {
         [agent.agent_type]:
           agent.distribution_type === "binary"
             ? "uninstall_binary"
-            : "uninstall_npx",
+            : agent.distribution_type === "npx"
+              ? "uninstall_npx"
+              : "uninstall_binary",
       }))
       const taskId = randomUUID()
       setStreamAgentType(agent.agent_type)
@@ -7182,7 +7184,7 @@ supports_websockets = true`}
                       </Button>
                     </div>
                   </div>
-                ) : (
+                ) : selectedAgent.agent_type === "hermes" ? null : (
                   <div className="space-y-3 rounded-md border bg-muted/10 p-3">
                     <div>
                       <label className="text-xs font-medium">

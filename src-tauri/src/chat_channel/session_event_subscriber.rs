@@ -10,7 +10,9 @@ use super::session_bridge::{PendingPermission, SessionBridge};
 use super::types::{MessageLevel, RichMessage};
 use crate::acp::manager::ConnectionManager;
 use crate::acp::types::PromptInputBlock;
-use crate::db::service::{app_metadata_service, conversation_service, sender_context_service};
+use chrono::Utc;
+use crate::db::service::{app_metadata_service, conversation_service, conversation_turn_service, sender_context_service};
+use crate::models::{ContentBlock, MessageTurn, TurnRole};
 use crate::web::event_bridge::WebEventBroadcaster;
 
 use super::manager::ChatChannelManager;
@@ -352,6 +354,20 @@ async fn handle_acp_event_payload(
 
                 let _ = manager.send_to_channel(channel_id, &msg).await;
 
+                // Save assistant turn to DB
+                if !content.is_empty() {
+                    let assistant_turn = MessageTurn {
+                        id: uuid::Uuid::new_v4().to_string(),
+                        role: TurnRole::Assistant,
+                        blocks: vec![ContentBlock::Text { text: content }],
+                        timestamp: Utc::now(),
+                        usage: None,
+                        duration_ms: None,
+                        model: Some(agent_type.to_string()),
+                    };
+                    let _ = conversation_turn_service::append_turn(db, conv_id, &assistant_turn).await;
+                }
+
                 if stop_reason == "end_turn" {
                     let _ = conversation_service::update_status(
                         db,
@@ -378,6 +394,7 @@ async fn handle_acp_event_payload(
                 let channel_id = session.channel_id;
                 let sender_id = session.sender_id.clone();
                 let conv_id = session.conversation_id;
+                let error_content = session.content_buffer.clone();
                 drop(guard);
 
                 let lang = get_lang(db).await;
@@ -391,6 +408,20 @@ async fn handle_acp_event_payload(
                     level: MessageLevel::Error,
                 };
                 let _ = manager.send_to_channel(channel_id, &msg).await;
+
+                // Save partial assistant turn to DB if any content was accumulated
+                if !error_content.is_empty() {
+                    let assistant_turn = MessageTurn {
+                        id: uuid::Uuid::new_v4().to_string(),
+                        role: TurnRole::Assistant,
+                        blocks: vec![ContentBlock::Text { text: error_content }],
+                        timestamp: Utc::now(),
+                        usage: None,
+                        duration_ms: None,
+                        model: Some(agent_type.to_string()),
+                    };
+                    let _ = conversation_turn_service::append_turn(db, conv_id, &assistant_turn).await;
+                }
 
                 let _ = conversation_service::update_status(
                     db,
