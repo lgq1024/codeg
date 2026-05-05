@@ -17,6 +17,7 @@ use crate::acp::types::{
 use crate::db::entities::conversation::{self, ConversationStatus};
 use crate::db::service::conversation_service;
 use sea_orm::DatabaseConnection;
+use crate::db::AppDatabase;
 use crate::models::agent::AgentType;
 use crate::web::event_bridge::{emit_with_state, EventEmitter};
 
@@ -531,7 +532,7 @@ impl ConnectionManager {
                 (s.conversation_id, s.external_id.clone())
             };
             if let (Some(cid), Some(eid)) = (cid_opt, eid_opt) {
-                conversation_service::update_external_id(&db.conn, cid, eid)
+                conversation_service::update_external_id(db, cid, eid)
                     .await
                     .map_err(|e| AcpError::protocol(e.to_string()))?;
             } else if cid_opt.is_some() {
@@ -1068,7 +1069,7 @@ mod tests {
         // First call: creates conversation row, sets state.conversation_id.
         // The mpsc send error after linking is expected and ignored here.
         let _ = mgr
-            .send_prompt_linked(&db, conn_id, vec![], Some(folder_id), None)
+            .send_prompt_linked(&db.conn, conn_id, vec![], Some(folder_id), None)
             .await;
         let snap = mgr
             .get_state(conn_id)
@@ -1086,7 +1087,7 @@ mod tests {
 
         // Second call: ignores folder_id, does NOT create another row.
         let _ = mgr
-            .send_prompt_linked(&db, conn_id, vec![], Some(folder_id), None)
+            .send_prompt_linked(&db.conn, conn_id, vec![], Some(folder_id), None)
             .await;
         let snap2 = mgr
             .get_state(conn_id)
@@ -1109,7 +1110,7 @@ mod tests {
             map.insert(conn_id.into(), fake_connection(conn_id, None));
         }
         let result = mgr
-            .send_prompt_linked(&db, conn_id, vec![], None, None)
+            .send_prompt_linked(&db.conn, conn_id, vec![], None, None)
             .await;
         assert!(
             result.is_err(),
@@ -1124,11 +1125,11 @@ mod tests {
 
     /// Count of `conversation` rows (ignoring soft-delete) — used by the
     /// caller-supplied conversation_id tests to assert no new row was created.
-    async fn count_conversation_rows(db: &crate::db::AppDatabase) -> usize {
+    async fn count_conversation_rows(db: &sea_orm::DatabaseConnection) -> usize {
         use crate::db::entities::conversation;
         use sea_orm::EntityTrait;
         conversation::Entity::find()
-            .all(&db)
+            .all(db)
             .await
             .unwrap()
             .len()
@@ -1141,7 +1142,7 @@ mod tests {
         let folder_id = test_helpers::seed_folder(&db, "/tmp/caller-id").await;
         // Pre-create a conversation row the caller will reference.
         let pre_existing = conversation_service::create(
-            &db,
+            &db.conn,
             folder_id,
             AgentType::ClaudeCode,
             None,
@@ -1163,12 +1164,12 @@ mod tests {
         .await;
 
         // Count rows before
-        let before = count_conversation_rows(&db).await;
+        let before = count_conversation_rows(&db.conn).await;
 
         // Send with caller-supplied conversation_id + folder_id.
         let _ = mgr
             .send_prompt_linked(
-                &db,
+                &db.conn,
                 conn_id,
                 vec![],
                 Some(folder_id),
@@ -1177,7 +1178,7 @@ mod tests {
             .await;
 
         // No new conversation row was created.
-        let after = count_conversation_rows(&db).await;
+        let after = count_conversation_rows(&db.conn).await;
         assert_eq!(after, before, "no new row should be created");
 
         // State now has the caller-supplied conversation_id.
@@ -1215,7 +1216,7 @@ mod tests {
         .await;
 
         let err = mgr
-            .send_prompt_linked(&db, conn_id, vec![], None, Some(42))
+            .send_prompt_linked(&db.conn, conn_id, vec![], None, Some(42))
             .await
             .expect_err("should reject conversation_id without folder_id");
         assert!(matches!(err, AcpError::Protocol(_)));
@@ -1227,7 +1228,7 @@ mod tests {
         let db = test_helpers::fresh_in_memory_db().await;
         let folder_id = test_helpers::seed_folder(&db, "/tmp/already").await;
         let pre = conversation_service::create(
-            &db,
+            &db.conn,
             folder_id,
             AgentType::ClaudeCode,
             None,
@@ -1253,17 +1254,17 @@ mod tests {
             state.write().await.conversation_id = Some(pre.id);
         }
 
-        let before = count_conversation_rows(&db).await;
+        let before = count_conversation_rows(&db.conn).await;
         let _ = mgr
             .send_prompt_linked(
-                &db,
+                &db.conn,
                 conn_id,
                 vec![],
                 Some(folder_id),
                 Some(pre.id),
             )
             .await;
-        let after = count_conversation_rows(&db).await;
+        let after = count_conversation_rows(&db.conn).await;
         assert_eq!(after, before);
 
         // No ConversationLinked event was emitted (already linked). The
@@ -1330,7 +1331,7 @@ mod tests {
         //   2. ConversationStatusChanged(InProgress)  [pre-send write]
         //   3. ConversationStatusChanged(Cancelled)   [rollback after send failure]
         let _ = mgr
-            .send_prompt_linked(&db, conn_id, vec![], Some(folder_id), None)
+            .send_prompt_linked(&db.conn, conn_id, vec![], Some(folder_id), None)
             .await;
 
         let env1 = recv_first_acp_event(&mut rx).await;
@@ -1383,7 +1384,7 @@ mod tests {
         // intermediate InProgress write is observable only via the event,
         // not by the time the test reads the row.
         let row = conversation::Entity::find_by_id(conv_id)
-            .one(&db)
+            .one(&db.conn)
             .await
             .unwrap()
             .expect("conversation row exists");
@@ -1393,12 +1394,12 @@ mod tests {
         // and then Cancelled (same send-failure rollback). Pre-flip the row
         // to PendingReview to observe the transition flip forward — mirrors
         // the "follow-up turn after a TurnComplete" scenario.
-        conversation_service::update_status(&db, conv_id, ConversationStatus::PendingReview)
+        conversation_service::update_status(&db.conn, conv_id, ConversationStatus::PendingReview)
             .await
             .unwrap();
 
         let _ = mgr
-            .send_prompt_linked(&db, conn_id, vec![], Some(folder_id), None)
+            .send_prompt_linked(&db.conn, conn_id, vec![], Some(folder_id), None)
             .await;
 
         let env4 = recv_first_acp_event(&mut rx).await;
@@ -1428,7 +1429,7 @@ mod tests {
             ),
         }
         let row2 = conversation::Entity::find_by_id(conv_id)
-            .one(&db)
+            .one(&db.conn)
             .await
             .unwrap()
             .unwrap();
@@ -1748,7 +1749,7 @@ mod tests {
             map.insert(conn_id.into(), fake_connection(conn_id, None));
         }
 
-        let before = count_conversation_rows(&db).await;
+        let before = count_conversation_rows(&db.conn).await;
         // tokio::join! polls the two futures concurrently in the SAME
         // task — they can borrow `&db` and `mgr` without the 'static
         // requirement that `tokio::spawn` would impose.
@@ -1756,17 +1757,17 @@ mod tests {
         tokio::join!(
             async {
                 let _ = mgr_ref
-                    .send_prompt_linked(&db, conn_id, vec![], Some(folder_id), None)
+                    .send_prompt_linked(&db.conn, conn_id, vec![], Some(folder_id), None)
                     .await;
             },
             async {
                 let _ = mgr_ref
-                    .send_prompt_linked(&db, conn_id, vec![], Some(folder_id), None)
+                    .send_prompt_linked(&db.conn, conn_id, vec![], Some(folder_id), None)
                     .await;
             },
         );
 
-        let after = count_conversation_rows(&db).await;
+        let after = count_conversation_rows(&db.conn).await;
         assert_eq!(
             after - before,
             1,
@@ -1884,7 +1885,7 @@ mod tests {
         .await;
 
         let result = mgr
-            .send_prompt_linked(&db, conn_id, vec![], Some(folder_id), None)
+            .send_prompt_linked(&db.conn, conn_id, vec![], Some(folder_id), None)
             .await;
         assert!(
             matches!(result, Err(AcpError::ProcessExited)),
@@ -1939,7 +1940,7 @@ mod tests {
 
         // DB row settles at Cancelled — final ground truth read.
         let row = conversation::Entity::find_by_id(conv_id)
-            .one(&db)
+            .one(&db.conn)
             .await
             .unwrap()
             .expect("conversation row exists");

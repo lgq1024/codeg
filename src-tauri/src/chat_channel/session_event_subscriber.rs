@@ -354,20 +354,6 @@ async fn handle_acp_event_payload(
 
                 let _ = manager.send_to_channel(channel_id, &msg).await;
 
-                // Save assistant turn to DB
-                if !content.is_empty() {
-                    let assistant_turn = MessageTurn {
-                        id: uuid::Uuid::new_v4().to_string(),
-                        role: TurnRole::Assistant,
-                        blocks: vec![ContentBlock::Text { text: content }],
-                        timestamp: Utc::now(),
-                        usage: None,
-                        duration_ms: None,
-                        model: Some(agent_type.to_string()),
-                    };
-                    let _ = conversation_turn_service::append_turn(db, conv_id, &assistant_turn).await;
-                }
-
                 if stop_reason == "end_turn" {
                     let _ = conversation_service::update_status(
                         db,

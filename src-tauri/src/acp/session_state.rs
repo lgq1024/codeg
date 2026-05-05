@@ -432,9 +432,16 @@ impl SessionState {
             }
             existing.push_str(text);
         } else {
-            live.content.push(LiveContentBlock::Text {
-                text: text.to_string(),
+            // Reconnect guard: skip if an earlier text block already has the
+            // same content (e.g. Hermes reconnect replay after snapshot).
+            let has_duplicate = live.content.iter().any(|b| {
+                matches!(b, LiveContentBlock::Text { text: t } if t == text)
             });
+            if !has_duplicate {
+                live.content.push(LiveContentBlock::Text {
+                    text: text.to_string(),
+                });
+            }
         }
     }
 
@@ -450,9 +457,16 @@ impl SessionState {
             }
             existing.push_str(text);
         } else {
-            live.content.push(LiveContentBlock::Thinking {
-                text: text.to_string(),
+            // Reconnect guard: skip if an earlier thinking block already has
+            // the same content.
+            let has_duplicate = live.content.iter().any(|b| {
+                matches!(b, LiveContentBlock::Thinking { text: t } if t == text)
             });
+            if !has_duplicate {
+                live.content.push(LiveContentBlock::Thinking {
+                    text: text.to_string(),
+                });
+            }
         }
     }
 

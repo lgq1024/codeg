@@ -45,25 +45,24 @@ pub async fn append_turn(
     let turn_role = serde_json::to_string(&turn.role).unwrap_or_default();
     let turn_content = serde_json::to_string(&turn.blocks).unwrap_or_default();
 
-    // Deduplication: skip if the last turn in this conversation has identical
-    // role + content. This prevents duplicate accumulation when an ACP agent
-    // replays historical context on reconnect (e.g. Hermes).
-    let last_turn: Option<(String, String)> = conversation_turn::Entity::find()
+    // Deduplication: skip if any existing turn in this conversation has
+    // identical role + content. This prevents duplicate accumulation when an
+    // ACP agent replays historical context on reconnect (e.g. Hermes) where
+    // the replayed turn may not be the very last one.
+    let existing_duplicate: Option<i32> = conversation_turn::Entity::find()
         .filter(conversation_turn::Column::ConversationId.eq(conversation_id))
-        .order_by_desc(conversation_turn::Column::SortOrder)
+        .filter(conversation_turn::Column::Role.eq(&turn_role))
+        .filter(conversation_turn::Column::ContentJson.eq(&turn_content))
         .select_only()
-        .column(conversation_turn::Column::Role)
-        .column(conversation_turn::Column::ContentJson)
+        .column(conversation_turn::Column::Id)
         .into_tuple()
         .one(conn)
         .await
         .ok()
         .flatten();
 
-    if let Some((last_role, last_content)) = last_turn {
-        if last_role == turn_role && last_content == turn_content {
-            return Ok(());
-        }
+    if existing_duplicate.is_some() {
+        return Ok(());
     }
 
     let max_sort_order: i32 = conversation_turn::Entity::find()

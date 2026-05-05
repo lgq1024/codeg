@@ -1896,6 +1896,11 @@ fn read_cline_servers() -> Result<BTreeMap<String, Value>, AppCommandError> {
     Ok(out)
 }
 
+fn read_hermes_servers() -> Result<BTreeMap<String, Value>, AppCommandError> {
+    // Hermes does not yet have a dedicated MCP config file; return empty.
+    Ok(BTreeMap::new())
+}
+
 fn upsert_cline_server(id: &str, spec: &Value) -> Result<(), AppCommandError> {
     let path = cline_config_path();
     let mut root = read_json_file(&path)?;
@@ -2026,6 +2031,7 @@ pub fn read_servers_for_agent_type(
         AgentType::Gemini => read_gemini_servers(),
         AgentType::OpenClaw => read_openclaw_servers(),
         AgentType::Cline => read_cline_servers(),
+        AgentType::Hermes => read_hermes_servers(),
     }
 }
 

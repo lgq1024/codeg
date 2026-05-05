@@ -905,17 +905,34 @@ export function ConversationRuntimeProvider({
       }))
 
       // Phase 2: Locally completed turns (promoted optimistic + completed streaming)
-      const local: ConversationTimelineTurn[] = session.localTurns.map(
-        (turn, index) => ({
+      // Filter out any local turns whose role + content already exists in the
+      // persisted DB turns. This guards against Hermes reconnect replays that
+      // get promoted to localTurns after detail.turns has loaded.
+      const persistedFingerprints = new Set(
+        (session.detail?.turns ?? []).map(
+          (t) => `${t.role}::${JSON.stringify(t.blocks)}`
+        )
+      )
+      const local: ConversationTimelineTurn[] = session.localTurns
+        .filter(
+          (turn) =>
+            !persistedFingerprints.has(`${turn.role}::${JSON.stringify(turn.blocks)}`)
+        )
+        .map((turn, index) => ({
           key: `local-${conversationId}-${turn.id}-${index}`,
           turn,
           phase: "persisted",
-        })
-      )
+        }))
 
       // Phase 3: Optimistic turns (pending user messages)
-      const optimistic: ConversationTimelineTurn[] =
-        session.optimisticTurns.map((turn, index) => ({
+      // Also filter against persisted turns so that a user message saved to
+      // the DB before the optimistic turn is cleared does not appear twice.
+      const optimistic: ConversationTimelineTurn[] = session.optimisticTurns
+        .filter(
+          (turn) =>
+            !persistedFingerprints.has(`${turn.role}::${JSON.stringify(turn.blocks)}`)
+        )
+        .map((turn, index) => ({
           key: `optimistic-${conversationId}-${turn.id}-${index}`,
           turn,
           phase: "optimistic",

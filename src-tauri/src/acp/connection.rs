@@ -30,7 +30,7 @@ use tokio::sync::{mpsc, RwLock};
 use crate::acp::error::AcpError;
 use crate::acp::file_system_runtime::{FileSystemRuntime, FileSystemRuntimeError};
 use crate::acp::registry::{self, AgentDistribution};
-use crate::acp::session_state::{LiveContentBlock, SessionState};
+use crate::acp::session_state::{LiveContentBlock, SessionState, ToolCallOutput, ToolCallStatus};
 use crate::acp::terminal_runtime::{TerminalRuntime, TerminalRuntimeError};
 use crate::acp::types::{
     AcpEvent, AvailableCommandInfo, ConnectionInfo, ConnectionStatus, PermissionOptionInfo,
@@ -2870,20 +2870,63 @@ async fn persist_assistant_turn(
     let (conv_id, blocks) = {
         let s = state.read().await;
         let conv_id = s.conversation_id;
-        let blocks = s.live_message.as_ref().map(|lm| {
-            lm.content
-                .iter()
-                .filter_map(|block| match block {
+        let mut blocks: Vec<ModelContentBlock> = Vec::new();
+
+        if let Some(lm) = s.live_message.as_ref() {
+            for block in &lm.content {
+                match block {
                     LiveContentBlock::Text { text } => {
-                        Some(ModelContentBlock::Text { text: text.clone() })
+                        blocks.push(ModelContentBlock::Text { text: text.clone() });
                     }
                     LiveContentBlock::Thinking { text } => {
-                        Some(ModelContentBlock::Thinking { text: text.clone() })
+                        blocks.push(ModelContentBlock::Thinking { text: text.clone() });
                     }
-                    _ => None,
-                })
-                .collect::<Vec<_>>()
-        }).unwrap_or_default();
+                    LiveContentBlock::ToolCallRef { tool_call_id } => {
+                        if let Some(tc) = s.active_tool_calls.get(tool_call_id) {
+                            let input_preview = tc
+                                .input
+                                .as_ref()
+                                .and_then(|v| serde_json::to_string(v).ok())
+                                .or_else(|| {
+                                    if tc.raw_input_chunks.is_empty() {
+                                        None
+                                    } else {
+                                        Some(tc.raw_input_chunks.join(""))
+                                    }
+                                });
+                            let tool_name = serde_json::to_value(&tc.kind)
+                                .ok()
+                                .and_then(|v| v.as_str().map(String::from))
+                                .unwrap_or_else(|| "other".to_string());
+                            blocks.push(ModelContentBlock::ToolUse {
+                                tool_use_id: Some(tc.id.clone()),
+                                tool_name,
+                                input_preview,
+                            });
+                            let output_preview = tc.output.as_ref().and_then(|o| match o {
+                                ToolCallOutput::Text { content } => Some(content.clone()),
+                                ToolCallOutput::Error { message } => Some(message.clone()),
+                                ToolCallOutput::Json { value } => serde_json::to_string(value).ok(),
+                            }).or_else(|| tc.content.clone());
+                            let is_error = tc.status == ToolCallStatus::Failed;
+                            blocks.push(ModelContentBlock::ToolResult {
+                                tool_use_id: Some(tc.id.clone()),
+                                output_preview,
+                                is_error,
+                                agent_stats: None,
+                            });
+                        }
+                    }
+                    LiveContentBlock::Plan { entries } => {
+                        let plan_text = format_plan_entries(entries);
+                        if !plan_text.is_empty() {
+                            blocks.push(ModelContentBlock::Thinking { text: plan_text });
+                        }
+                    }
+                }
+            }
+        }
+
         (conv_id, blocks)
     };
     if let Some(cid) = conv_id {
@@ -2905,6 +2948,21 @@ async fn persist_assistant_turn(
             .await;
         }
     }
+}
+
+fn format_plan_entries(entries: &serde_json::Value) -> String {
+    let items = entries.as_array().cloned().unwrap_or_default();
+    if items.is_empty() {
+        return "Plan updated.".to_string();
+    }
+    let mut lines = vec!["Plan updated:".to_string()];
+    for item in items {
+        let content = item.get("content").and_then(|v| v.as_str()).unwrap_or("");
+        let priority = item.get("priority").and_then(|v| v.as_str()).unwrap_or("");
+        let status = item.get("status").and_then(|v| v.as_str()).unwrap_or("");
+        lines.push(format!("- [{}] {} ({})", status, content, priority));
+    }
+    lines.join("\n")
 }
 
 /// Serialize a Vec<ToolCallContent> into a human-readable text string.

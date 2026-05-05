@@ -1,7 +1,7 @@
 import type { Metadata, Viewport } from "next"
 import "katex/dist/katex.min.css"
 import "./globals.css"
-import { JetBrains_Mono } from "next/font/google"
+// import { JetBrains_Mono } from "next/font/google"
 import { NextIntlClientProvider } from "next-intl"
 import { AppI18nProvider } from "@/components/i18n-provider"
 import { getMessagesForLocale } from "@/i18n/messages"
@@ -12,10 +12,10 @@ import { APPEARANCE_INIT_SCRIPT } from "@/lib/appearance-script"
 import { AppearanceProvider } from "@/components/appearance-provider"
 import { OverlayScrollbarsInit } from "@/components/overlay-scrollbars-init"
 
-const jetbrainsMono = JetBrains_Mono({
-  subsets: ["latin"],
-  variable: "--font-sans",
-})
+// const jetbrainsMono = JetBrains_Mono({
+//   subsets: ["latin"],
+//   variable: "--font-sans",
+// })
 
 export const viewport: Viewport = {
   width: "device-width",
@@ -47,7 +47,7 @@ export default async function RootLayout({
   return (
     <html
       lang={initialLocale}
-      className={jetbrainsMono.variable}
+      className="font-sans"
       suppressHydrationWarning
     >
       <body>

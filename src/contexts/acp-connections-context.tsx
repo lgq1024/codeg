@@ -634,20 +634,65 @@ function applyStreamingAction(
 
   if (action.type === "CONTENT_DELTA") {
     if (lastBlock?.type === "text") {
-      newContent = [
-        ...prev.content.slice(0, -1),
-        { type: "text", text: lastBlock.text + action.text },
-      ]
+      if (action.text === lastBlock.text) {
+        // Exact duplicate chunk (reconnect replay), skip
+        return null
+      }
+      if (
+        action.text.startsWith(lastBlock.text) &&
+        action.text.length > lastBlock.text.length
+      ) {
+        // Agent sent a cumulative snapshot instead of a delta;
+        // replace with the full text to avoid duplicate accumulation.
+        newContent = [
+          ...prev.content.slice(0, -1),
+          { type: "text", text: action.text },
+        ]
+      } else {
+        newContent = [
+          ...prev.content.slice(0, -1),
+          { type: "text", text: lastBlock.text + action.text },
+        ]
+      }
     } else {
+      // Reconnect guard: if an earlier text block already has the exact same
+      // content, skip instead of pushing a duplicate block.
+      const hasDuplicateText = prev.content.some(
+        (b) => b.type === "text" && b.text === action.text
+      )
+      if (hasDuplicateText) {
+        return null
+      }
       newContent = [...prev.content, { type: "text", text: action.text }]
     }
   } else {
     if (lastBlock?.type === "thinking") {
-      newContent = [
-        ...prev.content.slice(0, -1),
-        { type: "thinking", text: lastBlock.text + action.text },
-      ]
+      if (action.text === lastBlock.text) {
+        return null
+      }
+      if (
+        action.text.startsWith(lastBlock.text) &&
+        action.text.length > lastBlock.text.length
+      ) {
+        newContent = [
+          ...prev.content.slice(0, -1),
+          { type: "thinking", text: action.text },
+        ]
+      } else {
+        newContent = [
+          ...prev.content.slice(0, -1),
+          { type: "thinking", text: lastBlock.text + action.text },
+        ]
+      }
     } else {
+      // Reconnect guard: if an earlier thinking block already has the exact
+      // same content, skip instead of pushing a duplicate block.
+      const hasDuplicateThinking = prev.content.some(
+        (b) => b.type === "thinking" && b.text === action.text
+      )
+      if (hasDuplicateThinking) {
+        return null
+      }
       newContent = [...prev.content, { type: "thinking", text: action.text }]
     }
   }
