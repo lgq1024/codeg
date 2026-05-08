@@ -390,7 +390,15 @@
       "fieldOutOfRange": "{field} value is out of allowed range",
       "jsonEmpty": "{name} cannot be empty",
       "jsonInvalid": "{name} is not valid JSON: {message}",
-      "jsonMustBeObject": "{name} must be a JSON object"
+      "jsonMustBeObject": "{name} must be a JSON object",
+      "specMustBeObject": "MCP config must be a JSON object.",
+      "missingType": "MCP config is missing the type field. Use one of stdio, http (aliases: streamable-http, streamableHttp), sse.",
+      "unsupportedType": "Unsupported MCP type {type}. Supported: stdio, http (aliases: streamable-http, streamableHttp), sse.",
+      "codexEntryUnsupportedType": "Codex MCP entry {id} has unsupported type {type}. Supported: stdio, http (aliases: streamable-http, streamableHttp), sse.",
+      "unsupportedTransportType": "Unsupported transport type {type}. Supported: http (aliases: streamable-http, streamableHttp), sse.",
+      "stdioCommandRequired": "stdio MCP requires a non-empty command field.",
+      "remoteUrlRequired": "Remote MCP requires a non-empty url field.",
+      "appsRequired": "Select at least one target app."
     },
     "jsonNames": {
       "localConfig": "MCP Config",
@@ -448,7 +456,9 @@
       "draftTitle": "New MCP",
       "draftDescription": "Provide a Server ID and configuration to create a local MCP server.",
       "serverIdLabel": "Server ID",
-      "serverIdPlaceholder": "Server ID (e.g. my-mcp)"
+      "serverIdPlaceholder": "Server ID (e.g. my-mcp)",
+      "typeHint": "Supported types: stdio, http (aliases: streamable-http, streamableHttp), sse. env is only used by stdio; for remote MCPs use headers to carry auth tokens.",
+      "envOnRemoteWarning": "env detected on a remote MCP. Only stdio uses env; remote MCPs carry auth tokens via headers, so env will be ignored on save."
     },
     "market": {
       "selectMarketplace": "Select marketplace",
@@ -651,9 +661,9 @@
       "authMustBeObject": "auth.json must be a JSON object",
       "authInvalid": "auth.json format error: {message}",
       "providerIdPattern": "Provider ID only supports letters, numbers, underscore, dot and hyphen",
-      "providerExists": "Provider '{providerId}' already exists",
+      "providerExists": "Provider {providerId} already exists",
       "modelIdPattern": "Model ID only supports letters, numbers, underscore, dot, colon and hyphen",
-      "modelExists": "Model '{modelId}' already exists"
+      "modelExists": "Model {modelId} already exists"
     },
     "warnings": {
       "nativeJsonRecoveredStructured": "Native JSON config is invalid; reset to structured config",
@@ -725,6 +735,18 @@
   },
   "SettingsPages": {
     "agentsLoading": "Loading agent settings..."
+  },
+  "LoginPage": {
+    "documentTitle": "Login - codeg",
+    "brand": "Codeg",
+    "subtitle": "Enter your access token to connect to the desktop app",
+    "tokenPlaceholder": "Access Token",
+    "connect": "Connect",
+    "connecting": "Connecting...",
+    "helpText": "Find your token in the desktop app under Settings → Web Service",
+    "invalidToken": "Invalid token. Please check and try again.",
+    "connectionFailed": "Connection failed (HTTP {status})",
+    "networkError": "Unable to connect to the server"
   },
   "CommitPage": {
     "title": "Commit",
@@ -832,7 +854,7 @@
       "sortByCreatedAt": "Created time",
       "sortByUpdatedAt": "Updated time",
       "statusRunningBadge": "Running",
-      "statusFailedBadge": "Failed",
+      "statusCancelledBadge": "Cancelled",
       "conversationCountUnit": "{count, plural, one {# conversation} other {# conversations}}",
       "emptyFolderHint": "No conversations",
       "noMatchingConversations": "No matching conversations",
@@ -870,6 +892,7 @@
       "reloadFailed": "Failed to reload conversation: {message}",
       "reloaded": "Conversation reloaded",
       "reload": "Reload",
+      "activeConversationIndicator": "Active conversation",
       "newConversation": "New Conversation",
       "closeConversation": "Close Conversation",
       "copyText": "Copy Text",
@@ -1557,7 +1580,13 @@
           "initializeTimeout": "{agent} connection handshake timed out after 60 seconds. Please open Settings to check Agent configuration and network settings.",
           "processExited": "{agent} process exited unexpectedly.",
           "spawnFailed": "Failed to start {agent}: {message}",
-          "downloadFailed": "{agent} download failed: {message}"
+          "downloadFailed": "{agent} download failed: {message}",
+          "sessionLoadResourceNotFound": "{agent} session failed to load. Reload to retry, or start a new conversation.",
+          "turnFailedRefusal": "{agent} refused to continue this turn. This often indicates a backend or gateway error — check the agent's logs.",
+          "turnFailedMaxTokens": "{agent} reached the maximum token limit for this turn.",
+          "turnFailedMaxTurnRequests": "{agent} reached the maximum number of allowed requests for this turn.",
+          "turnFailedUnknown": "{agent} ended the turn with an unrecognized stop reason.",
+          "turnFailedEmpty": "{agent} ended the turn without producing any response. Please check the agent's configuration."
         },
         "unableReadAgentConfig": "Unable to read Agent config: {message}",
         "connectFailedTitle": "{agent} connection failed",
@@ -1709,13 +1738,15 @@
         "attachedResources": "Attached resources",
         "loading": "Loading...",
         "error": "Error: {message}",
-        "errorTitle": "Failed to load conversation",
+        "errorTitle": "Session load failed",
         "errorActionReload": "Reload",
         "errorActionNewSession": "New conversation",
         "emptyConversation": "No messages in this conversation.",
         "systemMessage": "System message",
         "copyMessage": "Copy",
-        "copied": "Copied"
+        "copied": "Copied",
+        "downloadImage": "Download image",
+        "downloadFailed": "Download failed: {message}"
       },
       "liveTurnStats": {
         "thinking": "Thinking...",
@@ -1832,6 +1863,19 @@
           "todosProgress": "Todos ({done}/{total})",
           "skillWithName": "Skill: {name}",
           "genericWithContext": "{tool}: {context}"
+        },
+        "toolGroup": {
+          "search": "{count, plural, one {Explored # search} other {Explored # searches}}",
+          "command": "{count, plural, one {Ran # command} other {Ran # commands}}",
+          "read": "{count, plural, one {Read # file} other {Read # files}}",
+          "edit": "{count, plural, one {Edited # file} other {Edited # files}}",
+          "fetch": "{count, plural, one {Fetched # resource} other {Fetched # resources}}",
+          "think": "{count, plural, one {Thought # time} other {Thought # times}}",
+          "todo": "{count, plural, one {Updated # todo} other {Updated # todos}}",
+          "task": "{count, plural, one {Ran # task} other {Ran # tasks}}",
+          "other": "{count, plural, one {Used # tool} other {Used # tools}}",
+          "errorSuffix": "{count, plural, one {# failed} other {# failed}}",
+          "joiner": " · "
         }
       }
     },

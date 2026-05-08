@@ -4,8 +4,11 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useConversationRuntime } from "@/contexts/conversation-runtime-context"
 import { ContentPartsRenderer } from "./content-parts-renderer"
 import {
-  adaptMessageTurns,
+  createMessageTurnAdapter,
+  mergeAdjacentToolGroups,
   type AdaptedContentPart,
+  type AdaptedMessage,
+  type MessageTurnAdapter,
   type UserImageDisplay,
   type UserResourceDisplay,
 } from "@/lib/adapters/ai-elements-adapter"
@@ -13,6 +16,7 @@ import { TurnStats } from "./turn-stats"
 import { LiveTurnStats } from "./live-turn-stats"
 import { UserResourceLinks } from "./user-resource-links"
 import { UserImageAttachments } from "./user-image-attachments"
+import { AssistantImageAttachments } from "./assistant-image-attachments"
 import { useSessionStats } from "@/contexts/session-stats-context"
 import { AgentPlanOverlay } from "@/components/chat/agent-plan-overlay"
 import {
@@ -55,6 +59,14 @@ interface MessageListViewProps {
   sessionStats?: SessionStats | null
   detailLoading?: boolean
   detailError?: string | null
+  /**
+   * Set when the agent rejected `session/load` non-recoverably (e.g. the
+   * historical session_id was deleted). Takes precedence over `detailError`
+   * AND the renderable-content gate: even when the local DB has the full
+   * message history, the user must explicitly choose Reload or start a new
+   * conversation since the agent can't continue this thread.
+   */
+  acpLoadError?: string | null
   hideEmptyState?: boolean
   onReload?: () => void
   onNewSession?: () => void
@@ -66,6 +78,7 @@ interface ResolvedMessageGroup {
   parts: AdaptedContentPart[]
   resources: UserResourceDisplay[]
   images: UserImageDisplay[]
+  assistantImages: UserImageDisplay[]
   usage?: import("@/lib/types").TurnUsage | null
   duration_ms?: number | null
   model?: string | null
@@ -128,6 +141,135 @@ function extractTextFromParts(parts: AdaptedContentPart[]): string {
     .join("\n")
 }
 
+type AssistantTurnItem = Extract<ThreadRenderItem, { kind: "turn" }>
+
+function isEmptyTurnItem(item: ThreadRenderItem): boolean {
+  if (item.kind !== "turn") return false
+  const g = item.group
+  if (g.parts.length > 0) return false
+  if (g.resources.length > 0) return false
+  if (g.images.length > 0) return false
+  if (g.assistantImages.length > 0) return false
+  return true
+}
+
+/**
+ * Collapse runs of consecutive assistant turn render items into a single
+ * synthetic turn so tool-groups straddling a turn boundary fold into one
+ * collapsible. Empty (no-content) turn items are treated as transparent and
+ * do not break the run — that handles cases where parsers leave empty
+ * placeholder turns between tool exchanges.
+ */
+function mergeConsecutiveAssistantTurns(
+  items: ThreadRenderItem[]
+): ThreadRenderItem[] {
+  const result: ThreadRenderItem[] = []
+  const skipped: ThreadRenderItem[] = []
+  let buffer: AssistantTurnItem[] = []
+
+  const flush = () => {
+    if (buffer.length === 0) {
+      // Drain any skipped (empty) items collected since last flush
+      for (const s of skipped) result.push(s)
+      skipped.length = 0
+      return
+    }
+
+    if (buffer.length === 1) {
+      result.push(buffer[0])
+    } else {
+      const allParts = buffer.flatMap((it) => it.group.parts)
+      const mergedParts = mergeAdjacentToolGroups(allParts)
+      const last = buffer[buffer.length - 1]
+      const first = buffer[0]
+      const mergedAssistantImages = buffer.flatMap(
+        (it) => it.group.assistantImages
+      )
+
+      // Aggregate stats across the merged sub-turns so the post-stream
+      // stats row reflects the whole assistant response, not just the
+      // last sub-turn. Without this, multi-turn agents (Task tool, codex
+      // agent loops, etc.) would visibly under-report tokens.
+      let mergedUsage: import("@/lib/types").TurnUsage | null = null
+      let mergedDuration: number | null = null
+      const seenModels = new Set<string>()
+      const mergedModels: string[] = []
+      for (const it of buffer) {
+        const u = it.group.usage
+        if (u) {
+          if (!mergedUsage) {
+            mergedUsage = {
+              input_tokens: u.input_tokens,
+              output_tokens: u.output_tokens,
+              cache_creation_input_tokens: u.cache_creation_input_tokens,
+              cache_read_input_tokens: u.cache_read_input_tokens,
+            }
+          } else {
+            mergedUsage.input_tokens += u.input_tokens
+            mergedUsage.output_tokens += u.output_tokens
+            mergedUsage.cache_creation_input_tokens +=
+              u.cache_creation_input_tokens
+            mergedUsage.cache_read_input_tokens += u.cache_read_input_tokens
+          }
+        }
+        if (typeof it.group.duration_ms === "number") {
+          mergedDuration = (mergedDuration ?? 0) + it.group.duration_ms
+        }
+        if (it.group.model && !seenModels.has(it.group.model)) {
+          seenModels.add(it.group.model)
+          mergedModels.push(it.group.model)
+        }
+      }
+
+      result.push({
+        ...last,
+        key: `merged-${first.key}`,
+        group: {
+          ...last.group,
+          id: first.group.id,
+          parts: mergedParts,
+          assistantImages: mergedAssistantImages,
+          usage: mergedUsage,
+          duration_ms: mergedDuration,
+          model: mergedModels[0] ?? last.group.model,
+          models: mergedModels.length > 1 ? mergedModels : undefined,
+        },
+      })
+    }
+
+    // Drop any empty items that were collapsed inside the run
+    skipped.length = 0
+    buffer = []
+  }
+
+  for (const item of items) {
+    if (item.kind === "turn" && item.group.role === "assistant") {
+      // Flush any leading skipped (empty non-assistant) items before starting
+      // a fresh assistant run. This keeps non-assistant placeholders in their
+      // original relative order when no merging happens.
+      if (buffer.length === 0) {
+        for (const s of skipped) result.push(s)
+        skipped.length = 0
+      }
+      buffer.push(item)
+      continue
+    }
+
+    if (buffer.length > 0 && isEmptyTurnItem(item)) {
+      // Transparent: don't break the run, but track in case we end up not
+      // merging (single-buffer case still drops them as they're invisible).
+      skipped.push(item)
+      continue
+    }
+
+    flush()
+    result.push(item)
+  }
+  flush()
+
+  return result
+}
+
 const UserMessageCopyButton = memo(function UserMessageCopyButton({
   parts,
 }: {
@@ -184,6 +326,12 @@ const HistoricalMessageGroup = memo(function HistoricalMessageGroup({
       <Message from={group.role}>
         {group.role === "user" && group.images.length > 0 ? (
           <UserImageAttachments images={group.images} className="self-end" />
+        ) : null}
+        {group.role === "assistant" && group.assistantImages.length > 0 ? (
+          <AssistantImageAttachments
+            images={group.assistantImages}
+            className="self-start"
+          />
         ) : null}
         {group.role === "user" ? (
           <div className="group/user-msg flex w-fit ml-auto max-w-full items-start gap-1">
@@ -260,6 +408,7 @@ export function MessageListView({
   sessionStats = null,
   detailLoading = false,
   detailError = null,
+  acpLoadError = null,
   hideEmptyState = false,
   onReload,
   onNewSession,
@@ -295,6 +444,19 @@ export function MessageListView({
 
   const sessionSyncState = session?.syncState ?? "idle"
 
+  // Per-instance turn adapter: caches per-turn `AdaptedMessage` so unchanged
+  // historical turns survive every streaming-token re-render with stable refs.
+  const [turnAdapter] = useState<MessageTurnAdapter>(() =>
+    createMessageTurnAdapter()
+  )
+
+  // Sibling cache mapping each cached `AdaptedMessage` to its derived
+  // `ResolvedMessageGroup`, so `HistoricalMessageGroup`'s `memo` can short-
+  // circuit on prop reference equality.
+  const [groupCache] = useState<WeakMap<AdaptedMessage, ResolvedMessageGroup>>(
+    () => new WeakMap()
+  )
+
   const { threadItems, nonStreamingAdapted } = useMemo(() => {
     const allTurns = timelineTurns.map((item) => item.turn)
     const streamingIndices = new Set<number>()
@@ -307,7 +469,7 @@ export function MessageListView({
         }
       }
     })
-    const allAdapted = adaptMessageTurns(
+    const allAdapted = turnAdapter.adapt(
       allTurns,
       adapterText,
       streamingIndices.size > 0 ? streamingIndices : undefined,
@@ -323,27 +485,41 @@ export function MessageListView({
 
     // Map each adapted message directly to a render item (1:1).
     // Backend group_into_turns() already ensures each turn is a complete unit.
-    const items: ThreadRenderItem[] = allAdapted.map((msg, i) => {
+    const rawItems: ThreadRenderItem[] = allAdapted.map((msg, i) => {
       const phase = timelineTurns[i].phase
       const role = msg.role === "tool" ? "assistant" : msg.role
-      return {
-        key: `${phase}-${msg.id}-${i}`,
-        kind: "turn" as const,
-        group: {
+      let group = groupCache.get(msg)
+      if (!group) {
+        group = {
           id: msg.id,
           role,
           parts: msg.content,
           resources: msg.userResources ?? [],
           images: msg.userImages ?? [],
+          assistantImages: msg.assistantImages ?? [],
           usage: msg.usage,
           duration_ms: msg.duration_ms,
           model: msg.model,
-        },
+        }
+        groupCache.set(msg, group)
+      }
+      return {
+        // Include phase so a turn that briefly coexists across phases (e.g.
+        // a streaming turn that has just been promoted to localTurns while the
+        // liveMessage is still attached) doesn't collide with itself in the
+        // virtualized list. Index disambiguates further within a phase.
+        key: `${phase}-${msg.id}-${i}`,
+        kind: "turn" as const,
+        group,
         phase,
         showStats: false,
         isRoleTransition: false,
       }
     })
+
+    // Collapse consecutive assistant turn render items into a single rendered
+    // turn, so tool-groups straddling a turn boundary fold into one collapsible.
+    const items = mergeConsecutiveAssistantTurns(rawItems)
 
     // Compute showStats and isRoleTransition for each turn item
     for (let idx = 0; idx < items.length; idx++) {
@@ -376,7 +552,14 @@ export function MessageListView({
     }
 
     return { threadItems: items, nonStreamingAdapted: nonStreaming }
-  }, [adapterText, connStatus, sessionSyncState, timelineTurns])
+  }, [
+    adapterText,
+    connStatus,
+    sessionSyncState,
+    timelineTurns,
+    turnAdapter,
+    groupCache,
+  ])
 
   const historicalPlanEntries = useMemo(
     () => extractLatestPlanEntriesFromMessages(nonStreamingAdapted),
@@ -435,7 +618,15 @@ export function MessageListView({
     )
   }
 
-  if (detailError && !hasRenderableContent) {
+  // ACP load failures always replace content: even when the local DB has
+  // the conversation, the agent can't resume it, so silently rendering
+  // the history would mislead the user into thinking a follow-up message
+  // would extend the same thread.
+  const blockingLoadError = acpLoadError ?? null
+  const fallbackLoadError =
+    detailError && !hasRenderableContent ? detailError : null
+  const renderedLoadError = blockingLoadError ?? fallbackLoadError
+  if (renderedLoadError) {
     const showActions = Boolean(onReload || onNewSession)
     const reloading = detailLoading
     return (
@@ -448,7 +639,7 @@ export function MessageListView({
           <div className="space-y-1">
             <h3 className="text-sm font-medium">{t("errorTitle")}</h3>
             <p className="text-sm text-muted-foreground break-words">
-              {detailError}
+              {renderedLoadError}
             </p>
           </div>
           {showActions && (

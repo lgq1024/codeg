@@ -22,6 +22,7 @@ import type {
   TurnUsage,
 } from "@/lib/types"
 import { inferLiveToolName } from "@/lib/tool-call-normalization"
+import { toErrorMessage } from "@/lib/app-error"
 
 export type ConversationSyncState = "idle" | "awaiting_persist"
 
@@ -44,6 +45,13 @@ export interface ConversationRuntimeSession {
   detail: DbConversationDetail | null
   detailLoading: boolean
   detailError: string | null
+
+  // ACP `session/load` failed in a non-recoverable way (currently only when
+  // the agent reports ResourceNotFound for the historical session_id). Set
+  // by the connections layer via setAcpLoadError; cleared by the user
+  // pressing Reload, by a successful detail refetch, or when a new ACP
+  // session takes over.
+  acpLoadError: string | null
 
   // Active session accumulated turns (promoted optimistic + completed streaming)
   localTurns: MessageTurn[]
@@ -161,6 +169,11 @@ type Action =
       }>
       sessionStats?: SessionStats | null
     }
+  | {
+      type: "SET_ACP_LOAD_ERROR"
+      conversationId: number
+      error: string | null
+    }
   | { type: "REMOVE_CONVERSATION"; conversationId: number }
   | { type: "RESET" }
 
@@ -173,6 +186,7 @@ function createEmptySession(
     detail: null,
     detailLoading: false,
     detailError: null,
+    acpLoadError: null,
     localTurns: [],
     optimisticTurns: [],
     liveMessage: null,
@@ -398,9 +412,11 @@ function buildStreamingTurnsFromLiveMessage(
         }
         break
       case "thinking":
-        if (block.text.length > 0) {
-          currentBlocks.push({ type: "thinking", text: block.text })
-        }
+        // Keep empty thinking blocks during streaming so the reasoning UI
+        // can show its "Thinking..." indicator before any reasoning text
+        // arrives (and for newer Claude models that redact reasoning text
+        // entirely while still emitting thinking blocks).
+        currentBlocks.push({ type: "thinking", text: block.text })
         break
       case "plan": {
         currentBlocks.push({
@@ -436,7 +452,7 @@ function buildStreamingTurnsFromLiveMessage(
         const children = isAgent
           ? (agentChildren.get(block.info.tool_call_id) ?? [])
           : []
-        // Lazy: only construct agentStats when there are children to show
+
         const agentStats: AgentExecutionStats | undefined =
           isAgent && children.length > 0
             ? {
@@ -601,6 +617,33 @@ function reducer(
     case "COMPLETE_TURN": {
       const current = state.byConversationId.get(action.conversationId)
       if (!current) return state
+
+      // Idempotency guard — a single turn can be promoted twice when the
+      // panel's connStatus-edge effect and ConversationDetailPanel's
+      // background turn_complete listener both fire (e.g. when the bg
+      // listener's tab-membership check misses the new-conversation race
+      // and proceeds). The first call drains liveMessage + optimisticTurns
+      // into localTurns and lands syncState=idle; a second pass with a
+      // caller-provided action.liveMessage would otherwise rebuild
+      // streamingTurns from action.liveMessage and append them on top of
+      // the already-promoted turns, producing a duplicated assistant
+      // message in the timeline. If the session is already drained, the
+      // turn is a no-op regardless of action.liveMessage.
+      if (
+        current.liveMessage === null &&
+        current.optimisticTurns.length === 0 &&
+        current.syncState === "idle"
+      ) {
+        // Surface the unexpected double-invocation so future regressions
+        // are noticed in the console rather than silently swallowed.
+        // Reaching this branch means an upstream guard (e.g. the bg
+        // listener's tab-membership check) failed to dedupe.
+        console.warn(
+          "[conversation-runtime] COMPLETE_TURN dispatched on an already-drained session; ignoring",
+          { conversationId: action.conversationId }
+        )
+        return state
+      }
 
       // Prefer the caller-provided liveMessage when present. The panel's
       // mirror effect that syncs conn.liveMessage → session.liveMessage runs
@@ -805,6 +848,12 @@ function reducer(
         pendingCleanup: action.pendingCleanup,
       }))
 
+    case "SET_ACP_LOAD_ERROR":
+      return updateSessionInState(state, action.conversationId, (current) => ({
+        ...current,
+        acpLoadError: action.error,
+      }))
+
     case "REMOVE_CONVERSATION": {
       const current = state.byConversationId.get(action.conversationId)
       if (!current) return state
@@ -860,6 +909,7 @@ interface ConversationRuntimeContextValue {
     toConversationId: number
   ) => void
   setPendingCleanup: (conversationId: number, pendingCleanup: boolean) => void
+  setAcpLoadError: (conversationId: number, error: string | null) => void
   removeConversation: (conversationId: number) => void
   reset: () => void
 }
@@ -985,7 +1035,7 @@ export function ConversationRuntimeProvider({
         dispatch({
           type: "FETCH_DETAIL_ERROR",
           conversationId,
-          error: error instanceof Error ? error.message : String(error),
+          error: toErrorMessage(error),
         })
       })
   }, [])
@@ -1000,7 +1050,7 @@ export function ConversationRuntimeProvider({
         dispatch({
           type: "FETCH_DETAIL_ERROR",
           conversationId,
-          error: error instanceof Error ? error.message : String(error),
+          error: toErrorMessage(error),
         })
       })
   }, [])
@@ -1051,15 +1101,63 @@ export function ConversationRuntimeProvider({
 
               for (let i = 0; i < localAssistantIndices.length; i++) {
                 const parsedIdx = offset + i
-                if (parsedIdx < 0 || parsedIdx >= parsedAssistantTurns.length)
-                  continue
-                const pt = parsedAssistantTurns[parsedIdx]
-                if (!pt.usage && !pt.duration_ms && !pt.model) continue
+                let usageToApply: TurnUsage | null | undefined
+                let durationToApply: number | null | undefined
+                let modelToApply: string | null | undefined
+
+                if (parsedIdx >= 0 && parsedIdx < parsedAssistantTurns.length) {
+                  const pt = parsedAssistantTurns[parsedIdx]
+                  usageToApply = pt.usage
+                  durationToApply = pt.duration_ms
+                  modelToApply = pt.model
+                }
+
+                // When the parser splits the response into more sub-turns
+                // than the live stream did (offset > 0), roll the leading
+                // unmatched parsed turns' usage/duration into local[0] so
+                // that sum(local) equals sum(parsed). Without this, the
+                // mid-stream stats row under-reports tokens vs. a fresh
+                // historical reload, which clears localTurns and shows
+                // every parsed turn directly.
+                if (i === 0 && offset > 0) {
+                  for (let j = 0; j < offset; j++) {
+                    const extra = parsedAssistantTurns[j]
+                    if (extra.usage) {
+                      if (!usageToApply) {
+                        usageToApply = { ...extra.usage }
+                      } else {
+                        usageToApply = {
+                          input_tokens:
+                            usageToApply.input_tokens +
+                            extra.usage.input_tokens,
+                          output_tokens:
+                            usageToApply.output_tokens +
+                            extra.usage.output_tokens,
+                          cache_creation_input_tokens:
+                            usageToApply.cache_creation_input_tokens +
+                            extra.usage.cache_creation_input_tokens,
+                          cache_read_input_tokens:
+                            usageToApply.cache_read_input_tokens +
+                            extra.usage.cache_read_input_tokens,
+                        }
+                      }
+                    }
+                    if (typeof extra.duration_ms === "number") {
+                      durationToApply =
+                        (durationToApply ?? 0) + extra.duration_ms
+                    }
+                    if (!modelToApply && extra.model) {
+                      modelToApply = extra.model
+                    }
+                  }
+                }
+
+                if (!usageToApply && !durationToApply && !modelToApply) continue
                 patches.push({
                   index: localAssistantIndices[i],
-                  usage: pt.usage,
-                  duration_ms: pt.duration_ms,
-                  model: pt.model,
+                  usage: usageToApply,
+                  duration_ms: durationToApply,
+                  model: modelToApply,
                 })
               }
 
@@ -1164,6 +1262,13 @@ export function ConversationRuntimeProvider({
     []
   )
 
+  const setAcpLoadError = useCallback(
+    (conversationId: number, error: string | null) => {
+      dispatch({ type: "SET_ACP_LOAD_ERROR", conversationId, error })
+    },
+    []
+  )
+
   const removeConversation = useCallback((conversationId: number) => {
     dispatch({ type: "REMOVE_CONVERSATION", conversationId })
   }, [])
@@ -1188,6 +1293,7 @@ export function ConversationRuntimeProvider({
       clearEphemeralState,
       migrateConversation,
       setPendingCleanup,
+      setAcpLoadError,
       removeConversation,
       reset,
     }),
@@ -1206,6 +1312,7 @@ export function ConversationRuntimeProvider({
       clearEphemeralState,
       migrateConversation,
       setPendingCleanup,
+      setAcpLoadError,
       removeConversation,
       reset,
     ]

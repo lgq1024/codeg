@@ -390,7 +390,15 @@
       "fieldOutOfRange": "{field} の値が許可範囲外です",
       "jsonEmpty": "{name} は空にできません",
       "jsonInvalid": "{name} は有効なJSONではありません: {message}",
-      "jsonMustBeObject": "{name} はJSONオブジェクトである必要があります"
+      "jsonMustBeObject": "{name} はJSONオブジェクトである必要があります",
+      "specMustBeObject": "MCP 設定は JSON オブジェクトである必要があります。",
+      "missingType": "MCP 設定に type フィールドがありません。stdio、http（エイリアス：streamable-http、streamableHttp）、sse のいずれかを指定してください。",
+      "unsupportedType": "サポートされていない MCP タイプ {type}。対応：stdio、http（エイリアス：streamable-http、streamableHttp）、sse。",
+      "codexEntryUnsupportedType": "Codex MCP エントリ {id} のタイプ {type} はサポートされていません。対応：stdio、http（エイリアス：streamable-http、streamableHttp）、sse。",
+      "unsupportedTransportType": "サポートされていない transport タイプ {type}。対応：http（エイリアス：streamable-http、streamableHttp）、sse。",
+      "stdioCommandRequired": "stdio タイプの MCP には空でない command フィールドが必要です。",
+      "remoteUrlRequired": "リモート MCP には空でない url フィールドが必要です。",
+      "appsRequired": "対象アプリを少なくとも 1 つ選択してください。"
     },
     "jsonNames": {
       "localConfig": "MCP設定",
@@ -448,7 +456,9 @@
       "draftTitle": "新規 MCP",
       "draftDescription": "Server ID と設定を入力してローカル MCP サーバーを作成します。",
       "serverIdLabel": "Server ID",
-      "serverIdPlaceholder": "Server ID（例：my-mcp）"
+      "serverIdPlaceholder": "Server ID（例：my-mcp）",
+      "typeHint": "対応タイプ：stdio、http（エイリアス streamable-http、streamableHttp）、sse。env は stdio 専用です。リモート MCP の認証トークンは headers で渡してください。",
+      "envOnRemoteWarning": "リモート MCP の設定に env が含まれています。env は stdio のみで使用され、リモート MCP の認証トークンは headers に格納します。env は保存時に無視されます。"
     },
     "market": {
       "selectMarketplace": "マーケットプレイスを選択",
@@ -651,9 +661,9 @@
       "authMustBeObject": "auth.json はJSONオブジェクトである必要があります",
       "authInvalid": "auth.json 形式エラー: {message}",
       "providerIdPattern": "Provider ID は英字・数字・アンダースコア・ドット・ハイフンのみ使用できます",
-      "providerExists": "Provider '{providerId}' はすでに存在します",
+      "providerExists": "Provider {providerId} はすでに存在します",
       "modelIdPattern": "Model ID は英字・数字・アンダースコア・ドット・コロン・ハイフンのみ使用できます",
-      "modelExists": "Model '{modelId}' はすでに存在します"
+      "modelExists": "Model {modelId} はすでに存在します"
     },
     "warnings": {
       "nativeJsonRecoveredStructured": "ネイティブJSON設定が不正のため、構造化設定にリセットしました",
@@ -725,6 +735,18 @@
   },
   "SettingsPages": {
     "agentsLoading": "エージェント設定を読み込み中..."
+  },
+  "LoginPage": {
+    "documentTitle": "ログイン - codeg",
+    "brand": "Codeg",
+    "subtitle": "デスクトップアプリに接続するためのアクセストークンを入力してください",
+    "tokenPlaceholder": "アクセストークン",
+    "connect": "接続",
+    "connecting": "接続中...",
+    "helpText": "トークンはデスクトップアプリの 設定 → Web サービス で取得できます",
+    "invalidToken": "トークンが無効です。確認して再度お試しください",
+    "connectionFailed": "接続失敗 (HTTP {status})",
+    "networkError": "サーバーに接続できません"
   },
   "CommitPage": {
     "title": "コミット",
@@ -832,7 +854,7 @@
       "sortByCreatedAt": "作成時刻順",
       "sortByUpdatedAt": "更新時刻順",
       "statusRunningBadge": "実行中",
-      "statusFailedBadge": "失敗",
+      "statusCancelledBadge": "キャンセル済み",
       "conversationCountUnit": "{count} 件",
       "emptyFolderHint": "会話がありません",
       "noMatchingConversations": "一致する会話がありません",
@@ -870,6 +892,7 @@
       "reloadFailed": "会話の再読み込みに失敗しました: {message}",
       "reloaded": "会話を再読み込みしました",
       "reload": "再読み込み",
+      "activeConversationIndicator": "アクティブな会話",
       "newConversation": "新しい会話",
       "closeConversation": "会話を閉じる",
       "copyText": "テキストをコピー",
@@ -1557,7 +1580,13 @@
           "initializeTimeout": "{agent} の接続ハンドシェイクがタイムアウトしました（60 秒以内に応答なし）。設定を開いてエージェントとネットワーク設定を確認してください。",
           "processExited": "{agent} プロセスが予期せず終了しました。",
           "spawnFailed": "{agent} の起動に失敗しました: {message}",
-          "downloadFailed": "{agent} のダウンロードに失敗しました: {message}"
+          "downloadFailed": "{agent} のダウンロードに失敗しました: {message}",
+          "sessionLoadResourceNotFound": "{agent} セッションの読み込みに失敗しました。再読み込みして再試行するか、新しい会話を開始してください。",
+          "turnFailedRefusal": "{agent} がこのターンの続行を拒否しました。バックエンドまたはゲートウェイのエラーが原因の可能性があります。エージェントのログを確認してください。",
+          "turnFailedMaxTokens": "{agent} がこのターンの最大トークン数に達しました。",
+          "turnFailedMaxTurnRequests": "{agent} がこのターンで許可された最大リクエスト数に達しました。",
+          "turnFailedUnknown": "{agent} が不明な停止理由でターンを終了しました。",
+          "turnFailedEmpty": "{agent} は応答を生成せずにターンを終了しました。エージェントの設定を確認してください。"
         },
         "unableReadAgentConfig": "エージェント設定を読み取れません: {message}",
         "connectFailedTitle": "{agent} の接続に失敗しました",
@@ -1709,13 +1738,15 @@
         "attachedResources": "添付リソース",
         "loading": "読み込み中...",
         "error": "エラー: {message}",
-        "errorTitle": "会話の読み込みに失敗しました",
+        "errorTitle": "セッションの読み込みに失敗しました",
         "errorActionReload": "再読み込み",
         "errorActionNewSession": "新規会話",
         "emptyConversation": "この会話にはメッセージがありません。",
         "systemMessage": "システムメッセージ",
         "copyMessage": "コピー",
-        "copied": "コピー済み"
+        "copied": "コピー済み",
+        "downloadImage": "画像をダウンロード",
+        "downloadFailed": "ダウンロードに失敗しました: {message}"
       },
       "liveTurnStats": {
         "thinking": "考え中...",
@@ -1832,6 +1863,19 @@
           "todosProgress": "タスク ({done}/{total})",
           "skillWithName": "Skill: {name}",
           "genericWithContext": "{tool}（{context}）"
+        },
+        "toolGroup": {
+          "search": "{count} 件を検索",
+          "command": "{count} 件のコマンドを実行",
+          "read": "{count} 件のファイルを読み取り",
+          "edit": "{count} 件のファイルを編集",
+          "fetch": "{count} 件のリソースを取得",
+          "think": "{count} 回思考",
+          "todo": "{count} 件の TODO を更新",
+          "task": "{count} 件のタスクを実行",
+          "other": "{count} 件のツールを使用",
+          "errorSuffix": "{count} 件失敗",
+          "joiner": " · "
         }
       }
     },

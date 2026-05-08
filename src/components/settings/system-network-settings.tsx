@@ -57,6 +57,7 @@ import {
 } from "@/lib/updater"
 import type { DownloadEvent } from "@/lib/updater"
 import { APP_LOCALES } from "@/lib/i18n"
+import { toErrorMessage } from "@/lib/app-error"
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`
@@ -118,6 +119,7 @@ export function SystemNetworkSettings() {
   const [savingTerminal, setSavingTerminal] = useState(false)
   const [enabled, setEnabled] = useState(false)
   const [proxyUrl, setProxyUrl] = useState("")
+  const [proxyUrlError, setProxyUrlError] = useState<string | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [disableHwAccel, setDisableHwAccel] = useState(false)
   const [savingRendering, setSavingRendering] = useState(false)
@@ -255,7 +257,7 @@ export function SystemNetworkSettings() {
         }
       }
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err)
+      const message = toErrorMessage(err)
       setLoadError(message)
       console.error("[Settings] load system settings failed:", err)
     } finally {
@@ -310,7 +312,7 @@ export function SystemNetworkSettings() {
           setCustomPathExists(null)
         }
       } catch (err) {
-        const message = err instanceof Error ? err.message : String(err)
+        const message = toErrorMessage(err)
         toast.error(t("terminalSaveFailed", { message }))
       } finally {
         setSavingTerminal(false)
@@ -353,7 +355,7 @@ export function SystemNetworkSettings() {
         setEnabled(next.enabled)
         setProxyUrl(next.proxy_url ?? "")
       } catch (err) {
-        const message = err instanceof Error ? err.message : String(err)
+        const message = toErrorMessage(err)
         toast.error(t("saveFailed", { message }))
       } finally {
         setSaving(false)
@@ -373,7 +375,7 @@ export function SystemNetworkSettings() {
         setPersistedDisableHwAccel(result.disable_hardware_acceleration)
       } catch (err) {
         setDisableHwAccel(prev)
-        const message = err instanceof Error ? err.message : String(err)
+        const message = toErrorMessage(err)
         toast.error(t("renderingSaveFailed", { message }))
       } finally {
         setSavingRendering(false)
@@ -386,7 +388,7 @@ export function SystemNetworkSettings() {
     try {
       await relaunchApp()
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err)
+      const message = toErrorMessage(err)
       toast.error(t("restartFailed", { message }))
     }
   }, [t])
@@ -403,7 +405,7 @@ export function SystemNetworkSettings() {
 
         setLanguageSettings(next)
       } catch (err) {
-        const message = err instanceof Error ? err.message : String(err)
+        const message = toErrorMessage(err)
         toast.error(t("languageSaveFailed", { message }))
       } finally {
         setSavingLanguage(false)
@@ -800,6 +802,11 @@ export function SystemNetworkSettings() {
               disabled={saving}
               onChange={(event) => {
                 const next = event.target.checked
+                if (next && !proxyUrl.trim()) {
+                  setProxyUrlError(t("proxyRequired"))
+                  return
+                }
+                setProxyUrlError(null)
                 setEnabled(next)
                 saveProxySettings(next, proxyUrl)
               }}
@@ -813,11 +820,25 @@ export function SystemNetworkSettings() {
             </label>
             <Input
               value={proxyUrl}
-              onChange={(event) => setProxyUrl(event.target.value)}
-              onBlur={() => saveProxySettings(enabled, proxyUrl)}
+              onChange={(event) => {
+                setProxyUrl(event.target.value)
+                if (event.target.value.trim()) setProxyUrlError(null)
+              }}
+              onBlur={() => {
+                if (enabled && !proxyUrl.trim()) {
+                  setProxyUrlError(t("proxyRequired"))
+                  return
+                }
+                setProxyUrlError(null)
+                saveProxySettings(enabled, proxyUrl)
+              }}
               placeholder={PROXY_EXAMPLE}
               disabled={saving}
+              aria-invalid={proxyUrlError ? true : undefined}
             />
+            {proxyUrlError && (
+              <p className="text-[11px] text-destructive">{proxyUrlError}</p>
+            )}
             <p className="text-[11px] text-muted-foreground">
               {t("proxyHint", { example: PROXY_EXAMPLE })}
             </p>

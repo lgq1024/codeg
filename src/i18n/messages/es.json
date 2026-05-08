@@ -390,7 +390,15 @@
       "fieldOutOfRange": "El valor de {field} está fuera del rango permitido",
       "jsonEmpty": "{name} no puede estar vacío",
       "jsonInvalid": "{name} no es un JSON válido: {message}",
-      "jsonMustBeObject": "{name} debe ser un objeto JSON"
+      "jsonMustBeObject": "{name} debe ser un objeto JSON",
+      "specMustBeObject": "La configuración de MCP debe ser un objeto JSON.",
+      "missingType": "Falta el campo type en la configuración de MCP. Indica uno de stdio, http (alias: streamable-http, streamableHttp), sse.",
+      "unsupportedType": "Tipo de MCP no admitido {type}. Compatibles: stdio, http (alias: streamable-http, streamableHttp), sse.",
+      "codexEntryUnsupportedType": "La entrada Codex MCP {id} tiene un tipo no admitido {type}. Compatibles: stdio, http (alias: streamable-http, streamableHttp), sse.",
+      "unsupportedTransportType": "Tipo de transport no admitido {type}. Compatibles: http (alias: streamable-http, streamableHttp), sse.",
+      "stdioCommandRequired": "Los MCP stdio requieren un campo command no vacío.",
+      "remoteUrlRequired": "Los MCP remotos requieren un campo url no vacío.",
+      "appsRequired": "Selecciona al menos una aplicación de destino."
     },
     "jsonNames": {
       "localConfig": "Configuración MCP",
@@ -448,7 +456,9 @@
       "draftTitle": "Nuevo MCP",
       "draftDescription": "Indica un Server ID y la configuración para crear un servidor MCP local.",
       "serverIdLabel": "Server ID",
-      "serverIdPlaceholder": "Server ID (p. ej. my-mcp)"
+      "serverIdPlaceholder": "Server ID (p. ej. my-mcp)",
+      "typeHint": "Tipos admitidos: stdio, http (alias: streamable-http, streamableHttp), sse. env solo se usa con stdio; para MCP remotos usa headers para llevar tokens de autenticación.",
+      "envOnRemoteWarning": "Se detectó env en un MCP remoto. Solo stdio usa env; los MCP remotos llevan los tokens de autenticación en headers, así que env se ignorará al guardar."
     },
     "market": {
       "selectMarketplace": "Seleccionar marketplace",
@@ -651,9 +661,9 @@
       "authMustBeObject": "auth.json debe ser un objeto JSON",
       "authInvalid": "Error de formato en auth.json: {message}",
       "providerIdPattern": "El ID de proveedor solo admite letras, números, guion bajo, punto y guion",
-      "providerExists": "El proveedor '{providerId}' ya existe",
+      "providerExists": "El proveedor {providerId} ya existe",
       "modelIdPattern": "El ID de modelo solo admite letras, números, guion bajo, punto, dos puntos y guion",
-      "modelExists": "El modelo '{modelId}' ya existe"
+      "modelExists": "El modelo {modelId} ya existe"
     },
     "warnings": {
       "nativeJsonRecoveredStructured": "La configuración JSON nativa es inválida; se restableció a configuración estructurada",
@@ -725,6 +735,18 @@
   },
   "SettingsPages": {
     "agentsLoading": "Cargando configuración de agentes..."
+  },
+  "LoginPage": {
+    "documentTitle": "Iniciar sesión - codeg",
+    "brand": "Codeg",
+    "subtitle": "Introduce tu token de acceso para conectarte a la aplicación de escritorio",
+    "tokenPlaceholder": "Token de acceso",
+    "connect": "Conectar",
+    "connecting": "Conectando...",
+    "helpText": "Encuentra tu token en la aplicación de escritorio en Configuración → Servicio web",
+    "invalidToken": "Token no válido. Por favor, comprueba e inténtalo de nuevo.",
+    "connectionFailed": "Error de conexión (HTTP {status})",
+    "networkError": "No se puede conectar al servidor"
   },
   "CommitPage": {
     "title": "Confirmación",
@@ -832,7 +854,7 @@
       "sortByCreatedAt": "Fecha de creación",
       "sortByUpdatedAt": "Fecha de actualización",
       "statusRunningBadge": "Ejecutando",
-      "statusFailedBadge": "Fallido",
+      "statusCancelledBadge": "Cancelado",
       "conversationCountUnit": "{count, plural, one {# conversación} other {# conversaciones}}",
       "emptyFolderHint": "Sin conversaciones",
       "noMatchingConversations": "No hay conversaciones coincidentes",
@@ -870,6 +892,7 @@
       "reloadFailed": "No se pudo recargar la conversación: {message}",
       "reloaded": "Conversación recargada",
       "reload": "Recargar",
+      "activeConversationIndicator": "Conversación activa",
       "newConversation": "Nueva conversación",
       "closeConversation": "Cerrar conversación",
       "copyText": "Copiar texto",
@@ -1557,7 +1580,13 @@
           "initializeTimeout": "Se agotó el tiempo del handshake de conexión de {agent} (sin respuesta tras 60 segundos). Abre Ajustes para revisar la configuración del agente y de la red.",
           "processExited": "El proceso de {agent} terminó inesperadamente.",
           "spawnFailed": "No se pudo iniciar {agent}: {message}",
-          "downloadFailed": "La descarga de {agent} falló: {message}"
+          "downloadFailed": "La descarga de {agent} falló: {message}",
+          "sessionLoadResourceNotFound": "Error al cargar la sesión de {agent}. Recarga para reintentar o inicia una nueva conversación.",
+          "turnFailedRefusal": "{agent} rechazó continuar este turno. Suele indicar un error de backend o pasarela. Revisa los registros del agente.",
+          "turnFailedMaxTokens": "{agent} alcanzó el límite máximo de tokens para este turno.",
+          "turnFailedMaxTurnRequests": "{agent} alcanzó el número máximo de solicitudes permitidas para este turno.",
+          "turnFailedUnknown": "{agent} finalizó el turno con un motivo de parada no reconocido.",
+          "turnFailedEmpty": "{agent} finalizó el turno sin producir ninguna respuesta. Revisa la configuración del agente."
         },
         "unableReadAgentConfig": "No se puede leer la configuración del agente: {message}",
         "connectFailedTitle": "Falló la conexión de {agent}",
@@ -1709,13 +1738,15 @@
         "attachedResources": "Recursos adjuntos",
         "loading": "Cargando...",
         "error": "Error del chat: {message}",
-        "errorTitle": "Error al cargar la conversación",
+        "errorTitle": "Error al cargar la sesión",
         "errorActionReload": "Recargar",
         "errorActionNewSession": "Nueva conversación",
         "emptyConversation": "No hay mensajes en esta conversación.",
         "systemMessage": "Mensaje del sistema",
         "copyMessage": "Copiar",
-        "copied": "Copiado"
+        "copied": "Copiado",
+        "downloadImage": "Descargar imagen",
+        "downloadFailed": "Descarga fallida: {message}"
       },
       "liveTurnStats": {
         "thinking": "Pensando...",
@@ -1832,6 +1863,19 @@
           "todosProgress": "Tareas ({done}/{total})",
           "skillWithName": "Skill: {name}",
           "genericWithContext": "{tool} ({context})"
+        },
+        "toolGroup": {
+          "search": "{count, plural, one {Exploró # búsqueda} other {Exploró # búsquedas}}",
+          "command": "{count, plural, one {Ejecutó # comando} other {Ejecutó # comandos}}",
+          "read": "{count, plural, one {Leyó # archivo} other {Leyó # archivos}}",
+          "edit": "{count, plural, one {Editó # archivo} other {Editó # archivos}}",
+          "fetch": "{count, plural, one {Recuperó # recurso} other {Recuperó # recursos}}",
+          "think": "{count, plural, one {Pensó # vez} other {Pensó # veces}}",
+          "todo": "{count, plural, one {Actualizó # tarea} other {Actualizó # tareas}}",
+          "task": "{count, plural, one {Ejecutó # tarea} other {Ejecutó # tareas}}",
+          "other": "{count, plural, one {Usó # herramienta} other {Usó # herramientas}}",
+          "errorSuffix": "{count, plural, one {# falló} other {# fallaron}}",
+          "joiner": " · "
         }
       }
     },
