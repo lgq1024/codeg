@@ -2552,6 +2552,7 @@ async fn run_conversation_loop<'a>(
                             usage: None,
                             duration_ms: None,
                             model: None,
+                            completed_at: None,
                         };
                         let _ = conversation_turn_service::append_turn(
                             db,
@@ -3101,6 +3102,7 @@ async fn persist_assistant_turn(
                 usage: None,
                 duration_ms: None,
                 model: Some(agent_type.to_string()),
+                completed_at: None,
             };
             let _ = conversation_turn_service::append_turn(
                 &db,

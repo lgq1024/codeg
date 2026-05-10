@@ -223,7 +223,7 @@ pub(crate) async fn lookup_credential(
     app_data_dir: &Path,
     host: &str,
 ) -> Result<Option<(String, String)>, String> {
-    let db_path = app_data_dir.join("codeg.db");
+    let db_path = app_data_dir.join("codeg-dev.db");
     if !db_path.exists() {
         return Ok(None);
     }

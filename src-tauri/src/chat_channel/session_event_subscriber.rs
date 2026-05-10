@@ -405,6 +405,7 @@ async fn handle_acp_event_payload(
                         usage: None,
                         duration_ms: None,
                         model: Some(agent_type.to_string()),
+                        completed_at: None,
                     };
                     let _ = conversation_turn_service::append_turn(db, conv_id, &assistant_turn).await;
                 }

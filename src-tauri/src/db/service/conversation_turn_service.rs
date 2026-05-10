@@ -118,6 +118,7 @@ pub async fn get_turns(
             usage,
             duration_ms: row.duration_ms.map(|d| d as u64),
             model: row.model,
+            completed_at: None,
         });
     }
 

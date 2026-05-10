@@ -310,6 +310,7 @@ pub async fn handle_task(
         timestamp: Utc::now(),
         usage: None,
         duration_ms: None,
+        completed_at: None,
         model: None,
     };
     let _ = conversation_turn_service::append_turn(db, conv.id, &user_turn).await;
@@ -751,6 +752,7 @@ pub async fn handle_followup(req: FollowupRequest<'_>) -> RichMessage {
             timestamp: Utc::now(),
             usage: None,
             duration_ms: None,
+            completed_at: None,
             model: None,
         };
         let _ = conversation_turn_service::append_turn(req.db, conv_id, &user_turn).await;
