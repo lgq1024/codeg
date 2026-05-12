@@ -544,6 +544,14 @@ pub fn build_router(
             post(handlers::web_server::get_web_server_status),
         )
         .route(
+            "/get_web_service_config",
+            post(handlers::web_server::get_web_service_config),
+        )
+        .route(
+            "/update_web_service_config",
+            post(handlers::web_server::update_web_service_config),
+        )
+        .route(
             "/start_web_server",
             post(handlers::web_server::start_web_server),
         )
@@ -716,6 +724,10 @@ pub fn build_router(
             post(handlers::pet::pet_marketplace_install),
         )
         .route("/pet_celebrate", post(handlers::pet::pet_celebrate))
+        .route(
+            "/pet_get_current_state",
+            post(handlers::pet::pet_get_current_state),
+        )
         // ─── Terminal ───
         .route("/terminal_spawn", post(handlers::terminal::terminal_spawn))
         .route("/terminal_write", post(handlers::terminal::terminal_write))

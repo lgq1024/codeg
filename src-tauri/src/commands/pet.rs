@@ -15,8 +15,10 @@ use crate::db::service::app_metadata_service;
 use crate::db::AppDatabase;
 use crate::models::pet::{
     ImportCodexPetsRequest, ImportCodexPetsResult, ImportablePet, NewPetInput, PetCelebrationKind,
-    PetDetail, PetMetaPatch, PetSpriteAsset, PetSummary, PetWindowConfig, PetWindowStatePatch,
+    PetDetail, PetMetaPatch, PetSpriteAsset, PetState, PetSummary, PetWindowConfig,
+    PetWindowStatePatch,
 };
+use crate::pet_state_mapper::{read_pet_state, PetStateHandle};
 use crate::pets;
 use crate::pets::marketplace::{
     MarketplaceInstallRequest, MarketplaceInstallResponse, MarketplaceListParams,
@@ -139,6 +141,7 @@ pub async fn pet_get_settings_core(
 
 pub async fn pet_set_active_core(
     db: &DatabaseConnection,
+    emitter: &EventEmitter,
     pet_id: Option<String>,
 ) -> Result<PetWindowConfig, AppCommandError> {
     let mut config = load_config(db).await?;
@@ -154,6 +157,9 @@ pub async fn pet_set_active_core(
 
     config.active_pet_id = pet_id;
     save_config(db, &config).await?;
+    // Notify the live pet window (and any WebSocket subscribers) so it can
+    // swap sprites in place rather than requiring close-and-reopen.
+    emit_event(emitter, "pet://active-changed", &config);
     Ok(config)
 }
 
@@ -168,6 +174,15 @@ pub async fn pet_set_active_core(
 pub fn pet_celebrate_core(emitter: &EventEmitter, kind: PetCelebrationKind) {
     let state: crate::models::pet::PetState = kind.into();
     emit_event(emitter, "pet://oneshot", state);
+}
+
+/// Snapshot of the current ambient pet state. The mapper only emits
+/// `pet://state` when the state changes, so a window that opens *after*
+/// the agent already started prompting would otherwise sit on its default
+/// `Idle` until the next ACP transition. The frontend calls this on mount
+/// to fill in the gap.
+pub fn pet_get_current_state_core(handle: &PetStateHandle) -> PetState {
+    read_pet_state(handle)
 }
 
 pub async fn pet_save_window_state_core(
@@ -337,7 +352,7 @@ pub async fn pet_codex_import_available() -> Result<PetCodexImportAvailability, 
 pub async fn pet_marketplace_list(
     page: Option<u32>,
     page_size: Option<u32>,
-    query: Option<String>,
+    q: Option<String>,
     kind: Option<String>,
     sort: Option<String>,
     tags: Option<Vec<String>>,
@@ -345,7 +360,7 @@ pub async fn pet_marketplace_list(
     pet_marketplace_list_core(MarketplaceListParams {
         page,
         page_size,
-        query,
+        q,
         kind,
         sort,
         tags,
@@ -378,10 +393,11 @@ pub async fn pet_get_settings(
 #[cfg(feature = "tauri-runtime")]
 #[cfg_attr(feature = "tauri-runtime", tauri::command)]
 pub async fn pet_set_active(
+    app: tauri::AppHandle,
     db: tauri::State<'_, AppDatabase>,
     pet_id: Option<String>,
 ) -> Result<PetWindowConfig, AppCommandError> {
-    pet_set_active_core(&db.conn, pet_id).await
+    pet_set_active_core(&db.conn, &EventEmitter::Tauri(app), pet_id).await
 }
 
 #[cfg(feature = "tauri-runtime")]
@@ -392,6 +408,14 @@ pub async fn pet_celebrate(
 ) -> Result<(), AppCommandError> {
     pet_celebrate_core(&EventEmitter::Tauri(app), kind);
     Ok(())
+}
+
+#[cfg(feature = "tauri-runtime")]
+#[cfg_attr(feature = "tauri-runtime", tauri::command)]
+pub async fn pet_get_current_state(
+    handle: tauri::State<'_, PetStateHandle>,
+) -> Result<PetState, AppCommandError> {
+    Ok(pet_get_current_state_core(handle.inner()))
 }
 
 #[cfg(feature = "tauri-runtime")]
