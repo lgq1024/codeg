@@ -49,6 +49,10 @@ pub struct AcpConnectParams {
     pub agent_type: AgentType,
     pub working_dir: Option<String>,
     pub session_id: Option<String>,
+    #[serde(default)]
+    pub preferred_mode_id: Option<String>,
+    #[serde(default)]
+    pub preferred_config_values: Option<BTreeMap<String, String>>,
 }
 
 pub async fn acp_connect(
@@ -92,9 +96,7 @@ pub async fn acp_connect(
     // the agent (or its child shells) authenticate against the GitHub
     // accounts configured in Settings → Version Control, mirroring what
     // the built-in terminal already does.
-    if let Some(cred_env) =
-        crate::commands::terminal::prepare_credential_env(&state.data_dir)
-    {
+    if let Some(cred_env) = crate::commands::terminal::prepare_credential_env(&state.data_dir) {
         for (key, value) in cred_env {
             runtime_env.insert(key, value);
         }
@@ -121,6 +123,8 @@ pub async fn acp_connect(
             runtime_env,
             "web".to_string(),
             emitter,
+            params.preferred_mode_id,
+            params.preferred_config_values.unwrap_or_default(),
         )
         .await
         .map_err(|e| AppCommandError::task_execution_failed(e.to_string()))?;
@@ -156,10 +160,7 @@ pub async fn acp_touch_connection(
     Extension(state): Extension<Arc<AppState>>,
     Json(params): Json<AcpTouchConnectionParams>,
 ) -> Result<Json<bool>, AppCommandError> {
-    let touched = state
-        .connection_manager
-        .touch(&params.connection_id)
-        .await;
+    let touched = state.connection_manager.touch(&params.connection_id).await;
     Ok(Json(touched))
 }
 
@@ -179,7 +180,7 @@ pub async fn acp_prompt(
     state
         .connection_manager
         .send_prompt_linked(
-            &state.db.conn,
+            &state.db,
             &params.connection_id,
             params.blocks,
             params.folder_id,
@@ -648,7 +649,10 @@ pub async fn opencode_install_plugins(
     Extension(state): Extension<Arc<AppState>>,
     Json(params): Json<OpencodeInstallPluginsParams>,
 ) -> Result<Json<()>, AppCommandError> {
-    let emitter = crate::web::event_bridge::EventEmitter::WebOnly(state.event_broadcaster.clone());
+    let emitter = crate::web::event_bridge::EventEmitter::web_only(
+        state.event_broadcaster.clone(),
+        state.acp_event_bus.clone(),
+    );
     acp_commands::opencode_install_plugins_core(params.names, params.task_id, &emitter)
         .await
         .map_err(|e| AppCommandError::task_execution_failed(e.to_string()))?;

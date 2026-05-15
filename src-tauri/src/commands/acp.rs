@@ -2157,10 +2157,13 @@ pub async fn acp_preflight(
 
 #[cfg(feature = "tauri-runtime")]
 #[cfg_attr(feature = "tauri-runtime", tauri::command)]
+#[allow(clippy::too_many_arguments)]
 pub async fn acp_connect(
     agent_type: AgentType,
     working_dir: Option<String>,
     session_id: Option<String>,
+    preferred_mode_id: Option<String>,
+    preferred_config_values: Option<BTreeMap<String, String>>,
     manager: State<'_, ConnectionManager>,
     db: State<'_, AppDatabase>,
     app_handle: tauri::AppHandle,
@@ -2190,8 +2193,12 @@ pub async fn acp_connect(
     // accounts configured in Settings → Version Control, mirroring what
     // the built-in terminal already does.
     if let Ok(app_data_dir) = app_handle.path().app_data_dir() {
+        // Match `commands::terminal`: resolve through the effective
+        // data dir so a custom `CODEG_DATA_DIR` reaches the helper
+        // script the agent's git subprocess will execute.
+        let effective_data_dir = crate::paths::resolve_effective_data_dir(&app_data_dir);
         if let Some(cred_env) =
-            crate::commands::terminal::prepare_credential_env(&app_data_dir)
+            crate::commands::terminal::prepare_credential_env(&effective_data_dir)
         {
             for (key, value) in cred_env {
                 runtime_env.insert(key, value);
@@ -2220,6 +2227,8 @@ pub async fn acp_connect(
             runtime_env,
             window.label().to_string(),
             emitter,
+            preferred_mode_id,
+            preferred_config_values.unwrap_or_default(),
         )
         .await
 }
@@ -2235,7 +2244,7 @@ pub async fn acp_prompt(
     manager: State<'_, ConnectionManager>,
 ) -> Result<(), AcpError> {
     manager
-        .send_prompt_linked(&db.conn, &connection_id, blocks, folder_id, conversation_id)
+        .send_prompt_linked(&db, &connection_id, blocks, folder_id, conversation_id)
         .await
 }
 
