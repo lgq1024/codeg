@@ -25,6 +25,13 @@ import type {
  * by HYDRATE_FROM_SNAPSHOT.
  */
 export interface SnapshotPatch {
+  // Carries the snapshot's source connection_id so the reducer can reject
+  // applying it when the connection at the target contextKey was
+  // disconnected and replaced (different connectionId) between the
+  // snapshot fetch start and its async response. Without this guard the
+  // eventSeq race window allows an old connection's snapshot to overwrite
+  // a freshly-started replacement at the same contextKey.
+  connectionId: string
   status: ConnectionStatus
   modelId: string | null
   sessionId: string | null
@@ -53,6 +60,7 @@ export function denormalizeSnapshot(wire: LiveSessionSnapshot): SnapshotPatch {
   }
 
   return {
+    connectionId: wire.connection_id,
     status: wire.status,
     modelId: wire.model_id ?? null,
     sessionId: wire.external_id,

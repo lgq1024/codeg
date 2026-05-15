@@ -1,5 +1,11 @@
-import { getTransport } from "./transport"
+import {
+  getActiveRemoteConnectionId,
+  getShellTransport,
+  getTransport,
+  isDesktop,
+} from "./transport"
 import { getCurrentEffectiveAppLocale } from "./i18n"
+import type { FolderThemeColor } from "./theme-presets"
 import type {
   AgentType,
   ConversationSummary,
@@ -717,7 +723,7 @@ export async function reorderFolders(ids: number[]): Promise<void> {
 
 export async function updateFolderColor(
   folderId: number,
-  color: string
+  color: FolderThemeColor
 ): Promise<FolderDetail> {
   return getTransport().call("update_folder_color", { folderId, color })
 }
@@ -929,12 +935,13 @@ export async function openMergeWindow(
   upstreamCommit?: string | null
 ): Promise<void> {
   const locale = getCurrentEffectiveAppLocale()
-  if (getTransport().isDesktop()) {
-    return getTransport().call("open_merge_window", {
+  if (isDesktop()) {
+    return getShellTransport().call("open_merge_window", {
       folderId,
       operation,
       upstreamCommit: upstreamCommit ?? null,
       locale,
+      remoteConnectionId: getActiveRemoteConnectionId(),
     })
   }
   const result = await getTransport().call<{ path: string }>(
@@ -951,8 +958,12 @@ export async function openMergeWindow(
 
 export async function openStashWindow(folderId: number): Promise<void> {
   const locale = getCurrentEffectiveAppLocale()
-  if (getTransport().isDesktop()) {
-    return getTransport().call("open_stash_window", { folderId, locale })
+  if (isDesktop()) {
+    return getShellTransport().call("open_stash_window", {
+      folderId,
+      locale,
+      remoteConnectionId: getActiveRemoteConnectionId(),
+    })
   }
   const result = await getTransport().call<{ path: string }>(
     "open_stash_window",
@@ -963,8 +974,12 @@ export async function openStashWindow(folderId: number): Promise<void> {
 
 export async function openPushWindow(folderId: number): Promise<void> {
   const locale = getCurrentEffectiveAppLocale()
-  if (getTransport().isDesktop()) {
-    return getTransport().call("open_push_window", { folderId, locale })
+  if (isDesktop()) {
+    return getShellTransport().call("open_push_window", {
+      folderId,
+      locale,
+      remoteConnectionId: getActiveRemoteConnectionId(),
+    })
   }
   const result = await getTransport().call<{ path: string }>(
     "open_push_window",
@@ -1156,8 +1171,12 @@ export async function openFolder(path: string): Promise<FolderDetail> {
 
 export async function openCommitWindow(folderId: number): Promise<void> {
   const locale = getCurrentEffectiveAppLocale()
-  if (getTransport().isDesktop()) {
-    return getTransport().call("open_commit_window", { folderId, locale })
+  if (isDesktop()) {
+    return getShellTransport().call("open_commit_window", {
+      folderId,
+      locale,
+      remoteConnectionId: getActiveRemoteConnectionId(),
+    })
   }
   const result = await getTransport().call<{ path: string }>(
     "open_commit_window",
@@ -1183,11 +1202,12 @@ export async function openSettingsWindow(
   options?: OpenSettingsWindowOptions
 ): Promise<void> {
   const locale = getCurrentEffectiveAppLocale()
-  if (getTransport().isDesktop()) {
-    return getTransport().call("open_settings_window", {
+  if (isDesktop()) {
+    return getShellTransport().call("open_settings_window", {
       section: section ?? null,
       agentType: options?.agentType ?? null,
       locale,
+      remoteConnectionId: getActiveRemoteConnectionId(),
     })
   }
   // Web mode: open in new window
@@ -1203,10 +1223,11 @@ export async function openSettingsWindow(
 }
 
 export async function openProjectBootWindow(source?: string): Promise<void> {
-  if (getTransport().isDesktop()) {
-    return getTransport().call("open_project_boot_window", {
+  if (isDesktop()) {
+    return getShellTransport().call("open_project_boot_window", {
       source,
       locale: getCurrentEffectiveAppLocale(),
+      remoteConnectionId: getActiveRemoteConnectionId(),
     })
   }
   if (typeof window !== "undefined") {
