@@ -3211,7 +3211,7 @@ async fn persist_assistant_turn(
                 completed_at: None,
             };
             let _ = conversation_turn_service::append_turn(
-                &db,
+                db,
                 cid,
                 &assistant_turn,
             )

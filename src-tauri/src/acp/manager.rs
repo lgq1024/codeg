@@ -145,6 +145,7 @@ impl ConnectionManager {
     #[allow(clippy::too_many_arguments)]
     pub async fn spawn_agent(
         &self,
+        db: &sea_orm::DatabaseConnection,
         agent_type: AgentType,
         working_dir: Option<String>,
         session_id: Option<String>,
@@ -213,6 +214,7 @@ impl ConnectionManager {
         // a cleanup hook, and returns the rx half of the signal. Any spawn
         // failure short-circuits before we touch the rx wait.
         let session_started_rx = spawn_agent_connection(
+            db.clone(),
             connection_id.clone(),
             agent_type,
             working_dir,
@@ -558,7 +560,11 @@ impl ConnectionManager {
         // on the row (touches `updated_at` only).
         let conversation_id_for_status = state_arc.read().await.conversation_id;
         if let Some(cid) = conversation_id_for_status {
-            conversation_service::update_status(&db.conn, cid, ConversationStatus::InProgress)
+            conversation_service::update_status(
+                &db.conn,
+                cid,
+                ConversationStatus::InProgress
+            )
                 .await
                 .map_err(|e| AcpError::protocol(e.to_string()))?;
             emit_with_state(
@@ -1181,11 +1187,11 @@ mod tests {
 
     /// Count of `conversation` rows (ignoring soft-delete) — used by the
     /// caller-supplied conversation_id tests to assert no new row was created.
-    async fn count_conversation_rows(db: &crate::db::AppDatabase) -> usize {
+    async fn count_conversation_rows(db: &sea_orm::DatabaseConnection) -> usize {
         use crate::db::entities::conversation;
         use sea_orm::EntityTrait;
         conversation::Entity::find()
-            .all(&db.conn)
+            .all(db)
             .await
             .unwrap()
             .len()
@@ -1216,7 +1222,7 @@ mod tests {
         let mut rx = subscribe_conn_stream(&mgr, conn_id).await;
 
         // Count rows before
-        let before = count_conversation_rows(&db).await;
+        let before = count_conversation_rows(&db.conn).await;
 
         // Send with caller-supplied conversation_id + folder_id.
         let _ = mgr
@@ -1224,7 +1230,7 @@ mod tests {
             .await;
 
         // No new conversation row was created.
-        let after = count_conversation_rows(&db).await;
+        let after = count_conversation_rows(&db.conn).await;
         assert_eq!(after, before, "no new row should be created");
 
         // State now has the caller-supplied conversation_id.
@@ -1296,11 +1302,11 @@ mod tests {
         }
         let mut rx = subscribe_conn_stream(&mgr, conn_id).await;
 
-        let before = count_conversation_rows(&db).await;
+        let before = count_conversation_rows(&db.conn).await;
         let _ = mgr
             .send_prompt_linked(&db, conn_id, vec![], Some(folder_id), Some(pre.id))
             .await;
-        let after = count_conversation_rows(&db).await;
+        let after = count_conversation_rows(&db.conn).await;
         assert_eq!(after, before);
 
         // No ConversationLinked event was emitted (already linked). The
@@ -1779,7 +1785,7 @@ mod tests {
             map.insert(conn_id.into(), fake_connection(conn_id, None));
         }
 
-        let before = count_conversation_rows(&db).await;
+        let before = count_conversation_rows(&db.conn).await;
         // tokio::join! polls the two futures concurrently in the SAME
         // task — they can borrow `&db` and `mgr` without the 'static
         // requirement that `tokio::spawn` would impose.
@@ -1797,7 +1803,7 @@ mod tests {
             },
         );
 
-        let after = count_conversation_rows(&db).await;
+        let after = count_conversation_rows(&db.conn).await;
         assert_eq!(
             after - before,
             1,
