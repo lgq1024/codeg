@@ -1429,6 +1429,9 @@
       "newDirectory": "ディレクトリ",
       "openIn": "で開く",
       "openInTerminal": "ターミナルで開く",
+      "upload": "ファイル/フォルダをアップロード",
+      "download": "ファイルをダウンロード",
+      "downloadAsZip": "ZIP としてダウンロード",
       "actions": {
         "select": "選択",
         "unselect": "選択解除",
@@ -1457,7 +1460,9 @@
         "savedAsCopy": "コピーとして保存しました",
         "saveCopyFailed": "コピーとして保存できませんでした",
         "watchStartFailed": "ファイル監視の開始に失敗しました",
-        "createFailed": "作成に失敗しました"
+        "createFailed": "作成に失敗しました",
+        "downloadFailed": "{name} のダウンロードに失敗しました",
+        "downloadSaved": "{name} をダウンロードしました"
       },
       "createDialog": {
         "newFile": "新規ファイル",
@@ -1472,6 +1477,31 @@
         "description": "新しい名前を入力してください（名前のみ、パスは不要）。",
         "placeholderDirectory": "新しいフォルダ名",
         "placeholderFile": "新しいファイル名.ext"
+      },
+      "uploadDialog": {
+        "title": "ワークスペースへアップロード",
+        "description": "必要に応じて上書き先を変更し、ファイルやフォルダを追加してください。",
+        "workspaceRoot": "ワークスペースのルート",
+        "targetPathLabel": "アップロード先",
+        "targetPathHint": "実際の場所：{path}",
+        "dropHint": "ファイルやフォルダをここにドロップ、または下のボタンから選択",
+        "dropHintActive": "離してキューに追加",
+        "selectFiles": "ファイルを選択",
+        "selectFolder": "フォルダを選択",
+        "startUpload": "アップロード開始",
+        "clearQueue": "完了したものをクリア",
+        "removeItem": "キューから削除",
+        "retry": "再試行",
+        "dropZoneAria": "ファイルをここにドロップ、または Enter で参照",
+        "folderEmpty": "ドロップされたフォルダにファイルが見つかりません",
+        "summary": "合計：{total} · 成功：{succeeded} · 失敗：{failed}",
+        "status": {
+          "pending": "待機中",
+          "uploading": "アップロード中",
+          "success": "完了",
+          "error": "失敗",
+          "cancelled": "キャンセル済み"
+        }
       },
       "directoryDialog": {
         "descriptionAdd": "ディレクトリ {path} 配下で VCS に追加するファイルを選択してください。",
@@ -1674,6 +1704,28 @@
         "autoConnectAppend": "{message}。{path} を開いてインストールを管理してください。",
         "enableAgentFirstPlaceholder": "セッション開始前に少なくとも1つのエージェントを有効化してください...",
         "askAnythingPlaceholder": "何でも質問してください..."
+      },
+      "welcomePanel": {
+        "title": "Codeg へようこそ",
+        "tips": {
+          "tileTabs": "会話タブを右クリックして「タイル表示」を選ぶと、複数のセッションを並べて比較できます",
+          "pinTab": "会話タブをダブルクリックすると固定でき、新しい会話に自動で置き換えられなくなります",
+          "shortcutsNewSearch": "<shortcut>{newConversation}</shortcut> で新規会話、<shortcut>{searchConversations}</shortcut> で履歴を検索できます",
+          "slashAtMention": "入力欄で / を入力するとスラッシュコマンド、@ を入力するとプロジェクト内のファイルを参照できます",
+          "pasteDropFiles": "スクリーンショットを貼り付けたり、ファイルを入力欄にドロップするだけで添付できます",
+          "queueMessage": "エージェントの応答中も入力を続けられ、次のメッセージはキューに入って完了後に自動送信されます",
+          "draftAutoSave": "未送信の下書きは会話ごとに自動保存され、戻ったときに復元されます",
+          "forkSend": "送信ボタンのドロップダウンで「分岐して送信」を選ぶと、現在の地点から新しいタブに分岐できます",
+          "exportConversation": "会話内容を右クリックすると Markdown / HTML / 画像としてエクスポートできます",
+          "chatChannels": "「設定 → チャットチャネル」で Telegram / Lark / WeChat を連携すれば、スマホから続けて操作できます",
+          "shortcutsAuxPanel": "<shortcut>{toggleAuxPanel}</shortcut> で右側パネルを開き、このセッションで変更したファイルや Git の差分を確認できます",
+          "shortcutsTerminalSidebar": "<shortcut>{toggleTerminal}</shortcut> で内蔵ターミナル、<shortcut>{toggleSidebar}</shortcut> でサイドバーを切り替えできます",
+          "customShortcuts": "すべてのショートカットは「設定 → ショートカット」で自由に変更できます",
+          "webService": "「設定 → Web サービス」を有効にすると、チームメンバーが同じ codeg にブラウザでアクセスできます",
+          "fusionMode": "上部ツールバーの「Fusion モード」に切り替えると、会話とファイル / Git パネルが並んで表示されます",
+          "quickMessages": "入力欄横の + ボタンから「クイックメッセージ」を選ぶと、保存済みのスニペットを一発で挿入できます（「設定 → クイックメッセージ」で管理）",
+          "experts": "+ ボタンの「エキスパートスキル」メニューから、デバッグや計画などのプリセットロールをワンクリックで読み込めます"
+        }
       },
       "agentSelector": {
         "noEnabledAgents": "有効なエージェントがありません",

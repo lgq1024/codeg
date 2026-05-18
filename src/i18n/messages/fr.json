@@ -1429,6 +1429,9 @@
       "newDirectory": "Répertoire",
       "openIn": "Ouvrir dans",
       "openInTerminal": "Ouvrir dans le terminal",
+      "upload": "Téléverser fichiers/dossier",
+      "download": "Télécharger le fichier",
+      "downloadAsZip": "Télécharger en ZIP",
       "actions": {
         "select": "Sélectionner",
         "unselect": "Désélectionner",
@@ -1457,7 +1460,9 @@
         "savedAsCopy": "Enregistré en copie",
         "saveCopyFailed": "Échec de l'enregistrement en copie",
         "watchStartFailed": "Échec du démarrage de la surveillance de fichiers",
-        "createFailed": "Échec de la création"
+        "createFailed": "Échec de la création",
+        "downloadFailed": "Échec du téléchargement de {name}",
+        "downloadSaved": "{name} téléchargé"
       },
       "createDialog": {
         "newFile": "Nouveau fichier",
@@ -1472,6 +1477,31 @@
         "description": "Saisissez un nouveau nom (nom uniquement, sans chemin).",
         "placeholderDirectory": "nouveau-nom-dossier",
         "placeholderFile": "nouveau-nom-fichier.ext"
+      },
+      "uploadDialog": {
+        "title": "Téléverser vers l'espace de travail",
+        "description": "Ajustez la destination si besoin, puis ajoutez des fichiers ou dossiers.",
+        "workspaceRoot": "racine de l'espace de travail",
+        "targetPathLabel": "Téléverser vers",
+        "targetPathHint": "Chemin résolu : {path}",
+        "dropHint": "Déposez des fichiers ou dossiers ici, ou utilisez les boutons ci-dessous",
+        "dropHintActive": "Relâchez pour ajouter à la file d'attente",
+        "selectFiles": "Sélectionner des fichiers",
+        "selectFolder": "Sélectionner un dossier",
+        "startUpload": "Lancer le téléversement",
+        "clearQueue": "Effacer terminés",
+        "removeItem": "Retirer de la file",
+        "retry": "Réessayer",
+        "dropZoneAria": "Déposez ici ou activez pour parcourir",
+        "folderEmpty": "Aucun fichier trouvé dans le dossier déposé",
+        "summary": "Total : {total} · Réussis : {succeeded} · Échoués : {failed}",
+        "status": {
+          "pending": "En attente",
+          "uploading": "Téléversement",
+          "success": "Terminé",
+          "error": "Échec",
+          "cancelled": "Annulé"
+        }
       },
       "directoryDialog": {
         "descriptionAdd": "Sélectionnez des fichiers sous le dossier {path} à ajouter au VCS.",
@@ -1674,6 +1704,28 @@
         "autoConnectAppend": "{message}. Cliquez pour ouvrir {path} et gérer l'installation.",
         "enableAgentFirstPlaceholder": "Activez au moins un agent avant de démarrer une session...",
         "askAnythingPlaceholder": "Posez n'importe quelle question..."
+      },
+      "welcomePanel": {
+        "title": "Bienvenue sur Codeg",
+        "tips": {
+          "tileTabs": "Faites un clic droit sur un onglet de conversation et choisissez Affichage en mosaïque pour comparer plusieurs sessions côte à côte.",
+          "pinTab": "Double-cliquez sur un onglet de conversation pour l'épingler : une nouvelle session ne le remplacera plus automatiquement.",
+          "shortcutsNewSearch": "<shortcut>{newConversation}</shortcut> ouvre une nouvelle conversation, <shortcut>{searchConversations}</shortcut> recherche dans l'historique.",
+          "slashAtMention": "Saisissez / dans la zone de saisie pour les commandes slash, ou @ pour référencer un fichier du projet.",
+          "pasteDropFiles": "Collez une capture d'écran ou déposez un fichier directement dans la zone de saisie pour le joindre.",
+          "queueMessage": "Pendant que l'agent répond, continuez à écrire : votre message suivant est mis en file et envoyé automatiquement à la fin.",
+          "draftAutoSave": "Les brouillons non envoyés sont sauvegardés automatiquement par conversation et restaurés à votre retour.",
+          "forkSend": "Le menu déroulant du bouton d'envoi propose Bifurquer et envoyer pour ouvrir une branche dans un nouvel onglet à partir du point actuel.",
+          "exportConversation": "Faites un clic droit dans la conversation pour l'exporter en Markdown, HTML ou image.",
+          "chatChannels": "Connectez Telegram / Lark / WeChat dans Paramètres → Canaux de discussion pour continuer depuis votre téléphone.",
+          "shortcutsAuxPanel": "<shortcut>{toggleAuxPanel}</shortcut> bascule le panneau droit pour voir les fichiers modifiés et les changements Git de cette session.",
+          "shortcutsTerminalSidebar": "<shortcut>{toggleTerminal}</shortcut> ouvre le terminal intégré, <shortcut>{toggleSidebar}</shortcut> bascule la barre latérale.",
+          "customShortcuts": "Tous les raccourcis peuvent être réassignés dans Paramètres → Raccourcis.",
+          "webService": "Activez Paramètres → Service Web pour que votre équipe accède au même codeg depuis un navigateur.",
+          "fusionMode": "Passez au mode Fusion depuis la barre supérieure pour voir la conversation à côté des fichiers / Git.",
+          "quickMessages": "Ouvrez le bouton + à côté de la saisie et choisissez Messages rapides pour insérer un extrait enregistré (à gérer dans Paramètres → Messages rapides).",
+          "experts": "Le bouton + propose un menu Compétences expertes — chargez en un clic des rôles comme Débogage ou Planification."
+        }
       },
       "agentSelector": {
         "noEnabledAgents": "Aucun agent activé",

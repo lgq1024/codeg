@@ -1429,6 +1429,9 @@
       "newDirectory": "Directorio",
       "openIn": "Abrir en",
       "openInTerminal": "Abrir en terminal",
+      "upload": "Subir archivos/carpeta",
+      "download": "Descargar archivo",
+      "downloadAsZip": "Descargar como ZIP",
       "actions": {
         "select": "Seleccionar",
         "unselect": "Deseleccionar",
@@ -1457,7 +1460,9 @@
         "savedAsCopy": "Guardado como copia",
         "saveCopyFailed": "No se pudo guardar como copia",
         "watchStartFailed": "No se pudo iniciar la vigilancia de archivos",
-        "createFailed": "Error al crear"
+        "createFailed": "Error al crear",
+        "downloadFailed": "No se pudo descargar {name}",
+        "downloadSaved": "{name} descargado"
       },
       "createDialog": {
         "newFile": "Nuevo archivo",
@@ -1472,6 +1477,31 @@
         "description": "Introduce un nuevo nombre (solo nombre, sin ruta).",
         "placeholderDirectory": "nuevo-nombre-carpeta",
         "placeholderFile": "nuevo-nombre-archivo.ext"
+      },
+      "uploadDialog": {
+        "title": "Subir al área de trabajo",
+        "description": "Ajusta el destino si es necesario y añade archivos o carpetas.",
+        "workspaceRoot": "raíz del área de trabajo",
+        "targetPathLabel": "Subir a",
+        "targetPathHint": "Ruta resuelta: {path}",
+        "dropHint": "Arrastra archivos o carpetas aquí, o usa los botones de abajo",
+        "dropHintActive": "Suelta para añadir a la cola",
+        "selectFiles": "Seleccionar archivos",
+        "selectFolder": "Seleccionar carpeta",
+        "startUpload": "Iniciar subida",
+        "clearQueue": "Limpiar finalizados",
+        "removeItem": "Quitar de la cola",
+        "retry": "Reintentar",
+        "dropZoneAria": "Suelta archivos aquí o activa para examinar",
+        "folderEmpty": "No se encontraron archivos en la carpeta soltada",
+        "summary": "Total: {total} · Con éxito: {succeeded} · Con error: {failed}",
+        "status": {
+          "pending": "En espera",
+          "uploading": "Subiendo",
+          "success": "Completado",
+          "error": "Falló",
+          "cancelled": "Cancelado"
+        }
       },
       "directoryDialog": {
         "descriptionAdd": "Selecciona archivos del directorio {path} para añadir a VCS.",
@@ -1674,6 +1704,28 @@
         "autoConnectAppend": "{message}. Haz clic para abrir {path} y gestionar la instalación.",
         "enableAgentFirstPlaceholder": "Habilita al menos un agente antes de iniciar una sesión...",
         "askAnythingPlaceholder": "Pregunta lo que sea..."
+      },
+      "welcomePanel": {
+        "title": "Bienvenido a Codeg",
+        "tips": {
+          "tileTabs": "Haz clic derecho en una pestaña de conversación y elige Vista en mosaico para comparar varias sesiones lado a lado.",
+          "pinTab": "Haz doble clic en una pestaña de conversación para fijarla y que una sesión nueva no la reemplace automáticamente.",
+          "shortcutsNewSearch": "<shortcut>{newConversation}</shortcut> abre una conversación nueva, <shortcut>{searchConversations}</shortcut> busca en el historial.",
+          "slashAtMention": "Escribe / en la entrada para activar comandos slash, o @ para referenciar un archivo del proyecto.",
+          "pasteDropFiles": "Pega una captura de pantalla o arrastra un archivo a la entrada para adjuntarlo.",
+          "queueMessage": "Mientras el agente responde, sigue escribiendo: tu próximo mensaje se pone en cola y se envía al terminar.",
+          "draftAutoSave": "Los borradores sin enviar se guardan automáticamente por conversación y se restauran al volver.",
+          "forkSend": "El desplegable del botón de enviar incluye Bifurcar y enviar, que ramifica desde el punto actual a una pestaña nueva.",
+          "exportConversation": "Haz clic derecho dentro de la conversación para exportarla como Markdown, HTML o imagen.",
+          "chatChannels": "Conecta Telegram / Lark / WeChat en Ajustes → Canales de chat para continuar desde el móvil.",
+          "shortcutsAuxPanel": "<shortcut>{toggleAuxPanel}</shortcut> alterna el panel derecho para ver los archivos tocados y los cambios de Git de esta sesión.",
+          "shortcutsTerminalSidebar": "<shortcut>{toggleTerminal}</shortcut> abre la terminal integrada, <shortcut>{toggleSidebar}</shortcut> alterna la barra lateral.",
+          "customShortcuts": "Todos los atajos se pueden reasignar en Ajustes → Atajos.",
+          "webService": "Activa Ajustes → Servicio web para que tu equipo acceda al mismo codeg desde un navegador.",
+          "fusionMode": "Cambia al modo Fusión desde la barra superior para ver la conversación junto a los archivos / Git.",
+          "quickMessages": "Abre el botón + junto a la entrada y elige Mensajes rápidos para insertar un fragmento guardado (gestiónalos en Ajustes → Mensajes rápidos).",
+          "experts": "El botón + tiene un menú Habilidades expertas: carga roles como Depuración o Planificación con un clic."
+        }
       },
       "agentSelector": {
         "noEnabledAgents": "No hay agentes habilitados",

@@ -1429,6 +1429,9 @@
       "newDirectory": "مجلد",
       "openIn": "فتح في",
       "openInTerminal": "فتح في الطرفية",
+      "upload": "رفع ملفات/مجلد",
+      "download": "تنزيل ملف",
+      "downloadAsZip": "تنزيل كملف ZIP",
       "actions": {
         "select": "تحديد",
         "unselect": "إلغاء التحديد",
@@ -1457,7 +1460,9 @@
         "savedAsCopy": "تم الحفظ كنسخة",
         "saveCopyFailed": "فشل الحفظ كنسخة",
         "watchStartFailed": "فشل بدء مراقبة الملفات",
-        "createFailed": "فشل في الإنشاء"
+        "createFailed": "فشل في الإنشاء",
+        "downloadFailed": "فشل تنزيل {name}",
+        "downloadSaved": "تم تنزيل {name}"
       },
       "createDialog": {
         "newFile": "ملف جديد",
@@ -1472,6 +1477,31 @@
         "description": "أدخل اسمًا جديدًا (الاسم فقط، بدون مسار).",
         "placeholderDirectory": "اسم-مجلد-جديد",
         "placeholderFile": "اسم-ملف-جديد.ext"
+      },
+      "uploadDialog": {
+        "title": "رفع إلى مساحة العمل",
+        "description": "اضبط الوجهة عند الحاجة، ثم أضف الملفات أو المجلدات.",
+        "workspaceRoot": "جذر مساحة العمل",
+        "targetPathLabel": "رفع إلى",
+        "targetPathHint": "المسار النهائي: {path}",
+        "dropHint": "اسحب الملفات أو المجلدات هنا، أو استخدم الأزرار أدناه",
+        "dropHintActive": "حرّر للإضافة إلى قائمة الانتظار",
+        "selectFiles": "اختيار ملفات",
+        "selectFolder": "اختيار مجلد",
+        "startUpload": "بدء الرفع",
+        "clearQueue": "مسح المنتهية",
+        "removeItem": "إزالة من قائمة الانتظار",
+        "retry": "إعادة المحاولة",
+        "dropZoneAria": "أفلت الملفات هنا أو نشّط للاستعراض",
+        "folderEmpty": "لم يتم العثور على ملفات في المجلد المسحوب",
+        "summary": "الإجمالي: {total} · نجح: {succeeded} · فشل: {failed}",
+        "status": {
+          "pending": "قيد الانتظار",
+          "uploading": "جاري الرفع",
+          "success": "تم",
+          "error": "فشل",
+          "cancelled": "ملغى"
+        }
       },
       "directoryDialog": {
         "descriptionAdd": "حدد الملفات ضمن المجلد {path} لإضافتها إلى VCS.",
@@ -1674,6 +1704,28 @@
         "autoConnectAppend": "{message}. انقر لفتح {path} وإدارة التثبيت.",
         "enableAgentFirstPlaceholder": "فعّل وكيلًا واحدًا على الأقل قبل بدء جلسة...",
         "askAnythingPlaceholder": "اسأل أي شيء..."
+      },
+      "welcomePanel": {
+        "title": "مرحبًا بك في Codeg",
+        "tips": {
+          "tileTabs": "انقر بزر الفأرة الأيمن على تبويب محادثة واختر «عرض متجانب» لمقارنة عدة جلسات جنبًا إلى جنب.",
+          "pinTab": "انقر نقرًا مزدوجًا على تبويب محادثة لتثبيته كي لا تستبدله جلسة جديدة تلقائيًا.",
+          "shortcutsNewSearch": "<shortcut>{newConversation}</shortcut> يفتح محادثة جديدة، و<shortcut>{searchConversations}</shortcut> يبحث في السجل.",
+          "slashAtMention": "اكتب / في حقل الإدخال لتشغيل أوامر السلاش، أو @ للإشارة إلى ملف من المشروع.",
+          "pasteDropFiles": "ألصق لقطة شاشة أو اسحب ملفًا مباشرة إلى حقل الإدخال لإرفاقه.",
+          "queueMessage": "أثناء رد الوكيل، تابع الكتابة — ستوضع رسالتك التالية في الطابور وتُرسل تلقائيًا عند انتهائه.",
+          "draftAutoSave": "تُحفظ المسودات غير المُرسلة تلقائيًا لكل محادثة وتُستعاد عند العودة.",
+          "forkSend": "تتضمن قائمة زر الإرسال المنسدلة «تفرّع وأرسل» لإنشاء فرع من النقطة الحالية في تبويب جديد.",
+          "exportConversation": "انقر بزر الفأرة الأيمن داخل المحادثة لتصديرها بصيغة Markdown أو HTML أو صورة.",
+          "chatChannels": "اربط Telegram / Lark / WeChat من «الإعدادات → قنوات الدردشة» للمتابعة من هاتفك.",
+          "shortcutsAuxPanel": "<shortcut>{toggleAuxPanel}</shortcut> يبدّل اللوحة اليمنى لعرض الملفات المعدّلة وتغييرات Git لهذه الجلسة.",
+          "shortcutsTerminalSidebar": "<shortcut>{toggleTerminal}</shortcut> يفتح الطرفية المدمجة، و<shortcut>{toggleSidebar}</shortcut> يبدّل الشريط الجانبي.",
+          "customShortcuts": "يمكن إعادة تعيين جميع الاختصارات من «الإعدادات → الاختصارات».",
+          "webService": "فعّل «الإعدادات → خدمة الويب» ليتمكن أعضاء الفريق من الوصول إلى نفس codeg عبر المتصفح.",
+          "fusionMode": "بدّل إلى وضع Fusion من شريط الأدوات العلوي لعرض المحادثة بجوار الملفات / Git.",
+          "quickMessages": "افتح زر + بجانب الإدخال واختر «الرسائل السريعة» لإدراج مقتطف محفوظ (تُدار من «الإعدادات → الرسائل السريعة»).",
+          "experts": "يحتوي زر + على قائمة «مهارات الخبراء» — حمّل أدوارًا مثل التصحيح أو التخطيط بنقرة واحدة."
+        }
       },
       "agentSelector": {
         "noEnabledAgents": "لا يوجد وكلاء مفعّلون",
