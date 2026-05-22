@@ -2880,6 +2880,12 @@ async fn run_conversation_loop<'a>(
                                             SelectedPermissionOutcome::new(option_id),
                                         );
                                         let _ = responder.respond(RequestPermissionResponse::new(outcome));
+                                        emit_with_state(
+                                            state,
+                                            emitter,
+                                            AcpEvent::PermissionResolved { request_id },
+                                        )
+                                        .await;
                                     }
                                 }
                                 Some(ConnectionCommand::SetMode { mode_id }) => {
@@ -3034,6 +3040,8 @@ async fn run_conversation_loop<'a>(
                         SelectedPermissionOutcome::new(option_id),
                     );
                     let _ = responder.respond(RequestPermissionResponse::new(outcome));
+                    emit_with_state(state, emitter, AcpEvent::PermissionResolved { request_id })
+                        .await;
                 }
             }
             Some(ConnectionCommand::SetMode { mode_id }) => {
@@ -4137,10 +4145,7 @@ mod tests {
         // solely on agent_type + subagent_type. Verify the detection
         // triggers regardless of the title shape.
         let input = Some(r#"{"subagent_type":"researcher","prompt":"x"}"#.to_string());
-        assert!(is_opencode_subagent_invocation(
-            AgentType::OpenCode,
-            &input
-        ));
+        assert!(is_opencode_subagent_invocation(AgentType::OpenCode, &input));
     }
 
     #[test]
@@ -4172,10 +4177,7 @@ mod tests {
 
     #[test]
     fn subagent_rejects_none_malformed_or_non_object_root() {
-        assert!(!is_opencode_subagent_invocation(
-            AgentType::OpenCode,
-            &None
-        ));
+        assert!(!is_opencode_subagent_invocation(AgentType::OpenCode, &None));
         for raw in [
             "not json",
             "{}",
@@ -4219,9 +4221,6 @@ mod tests {
             r#"{"description":"Explore project structure","prompt":"Look at the repo layout and summarise the stack.","subagent_type":"general-purpose"}"#
                 .to_string(),
         );
-        assert!(is_opencode_subagent_invocation(
-            AgentType::OpenCode,
-            &input
-        ));
+        assert!(is_opencode_subagent_invocation(AgentType::OpenCode, &input));
     }
 }

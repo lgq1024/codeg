@@ -1,25 +1,16 @@
 "use client"
 
 import type { ReactNode } from "react"
-import { useCallback, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useTranslations } from "next-intl"
 import { openUrl } from "@/lib/platform"
+import { getActiveRemoteConnectionId, isDesktop } from "@/lib/transport"
 import { toErrorMessage } from "@/lib/app-error"
 import type { LinkSafetyConfig, LinkSafetyModalProps } from "streamdown"
 import { toast } from "sonner"
 import { useActiveFolder } from "@/contexts/active-folder-context"
 import { useWorkspaceContext } from "@/contexts/workspace-context"
 import { cn } from "@/lib/utils"
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog"
 
 interface LocalFileTarget {
   path: string
@@ -28,6 +19,16 @@ interface LocalFileTarget {
 
 const WINDOWS_ABSOLUTE_PATH = /^[a-zA-Z]:[\\/]/
 const URL_SCHEME = /^[a-zA-Z][a-zA-Z\d+\-.]*:/
+const ALLOWED_EXTERNAL_PROTOCOLS = new Set([
+  "http:",
+  "https:",
+  "mailto:",
+  "tel:",
+])
+// Protocols handled by the OS (mail client, dialer) rather than a browser
+// page load. They must NOT be opened via `window.open(_, "_blank")` — most
+// browsers leave behind an empty `about:blank` tab once the OS handler fires.
+const OS_HANDLER_PROTOCOLS = new Set(["mailto:", "tel:"])
 
 function normalizeSlashPath(path: string): string {
   return path.replace(/\\/g, "/")
@@ -122,7 +123,7 @@ function parseLocalFileTarget(rawUrl: string): LocalFileTarget | null {
 
   // Split on raw # / ? before decoding so encoded `%23` / `%3F` inside the
   // path don't get promoted to fragment/query separators (which would point
-  // the open-file dialog at the wrong file).
+  // the file opener at the wrong file).
   const hashIndex = trimmed.indexOf("#")
   const rawHash = hashIndex >= 0 ? trimmed.slice(hashIndex) : ""
   const beforeHash = hashIndex >= 0 ? trimmed.slice(0, hashIndex) : trimmed
@@ -137,6 +138,73 @@ function parseLocalFileTarget(rawUrl: string): LocalFileTarget | null {
   return {
     path: normalizeSlashPath(normalizedPath),
     line: parseHashLine(rawHash) ?? pathAndLine.line,
+  }
+}
+
+function parseExternalUrl(rawUrl: string): URL | null {
+  const trimmed = rawUrl.trim()
+  if (!trimmed) return null
+
+  if (trimmed.startsWith("//")) {
+    try {
+      return new URL(trimmed, window.location.href)
+    } catch {
+      return null
+    }
+  }
+
+  if (!URL_SCHEME.test(trimmed) || WINDOWS_ABSOLUTE_PATH.test(trimmed)) {
+    return null
+  }
+
+  try {
+    return new URL(trimmed)
+  } catch {
+    return null
+  }
+}
+
+function getAllowedExternalProtocol(rawUrl: string): string | null {
+  const parsed = parseExternalUrl(rawUrl)
+  if (!parsed) return null
+  const protocol = parsed.protocol.toLowerCase()
+  return ALLOWED_EXTERNAL_PROTOCOLS.has(protocol) ? protocol : null
+}
+
+/**
+ * True when the current window has no access to the Tauri opener plugin
+ * (pure web, or a Tauri window bound to a remote codeg-server).
+ */
+function isWebOpenerEnvironment(): boolean {
+  return !isDesktop() || getActiveRemoteConnectionId() !== null
+}
+
+function shouldLetStreamdownOpenExternalUrl(rawUrl: string): boolean {
+  if (parseLocalFileTarget(rawUrl)) return false
+  const protocol = getAllowedExternalProtocol(rawUrl)
+  if (!protocol) return false
+  // OS-handler protocols always go through our own path so we can dispatch
+  // them via a synthetic anchor click — streamdown's `window.open(_, "_blank")`
+  // would otherwise leave a blank tab behind.
+  if (OS_HANDLER_PROTOCOLS.has(protocol)) return false
+  return isWebOpenerEnvironment()
+}
+
+/**
+ * Trigger an OS-registered protocol handler (mail client, dialer) from a
+ * browser without leaving an empty tab. The synthetic anchor has no
+ * `target`, so the browser hands the URL to the OS handler and stays on
+ * the current page.
+ */
+function dispatchOsHandlerUrl(url: string): void {
+  const anchor = document.createElement("a")
+  anchor.href = url
+  anchor.rel = "noreferrer noopener"
+  document.body.appendChild(anchor)
+  try {
+    anchor.click()
+  } finally {
+    anchor.remove()
   }
 }
 
@@ -169,7 +237,18 @@ function toWorkspaceRelativePath(
   return normalizedPath.slice(normalizedWorkspace.length + 1)
 }
 
-function LinkSafetyModal({
+/**
+ * Streamdown's link-safety contract renders this component whenever
+ * `onLinkCheck` declines a click. We render nothing — instead we hijack
+ * the `isOpen` transition to run our open-target action immediately, then
+ * call `onClose()` so streamdown's internal `isOpen` flag flips back to
+ * `false` and the next click on the same link is accepted.
+ *
+ * The handler identities are pinned through refs so a parent re-render
+ * mid-flight (translator function, workspace context, etc.) cannot tear
+ * down the effect and leave streamdown stuck with `isOpen === true`.
+ */
+function DirectLinkOpen({
   url,
   isOpen,
   onClose,
@@ -177,55 +256,31 @@ function LinkSafetyModal({
 }: LinkSafetyModalProps & {
   onAction: (url: string) => Promise<void>
 }) {
-  const t = useTranslations("Folder.chat.linkSafety")
-  const [opening, setOpening] = useState(false)
-  const localTarget = useMemo(() => parseLocalFileTarget(url), [url])
-  const isLocalFile = Boolean(localTarget)
+  const lastOpenedUrlRef = useRef<string | null>(null)
+  const onActionRef = useRef(onAction)
+  const onCloseRef = useRef(onClose)
 
-  const handleAction = useCallback(() => {
-    if (opening) return
-    setOpening(true)
-    void onAction(url).finally(() => {
-      setOpening(false)
+  // Sync the latest handler identities into refs after each render so the
+  // trigger effect below can stay scoped to `[isOpen, url]` and survive
+  // mid-flight parent re-renders.
+  useEffect(() => {
+    onActionRef.current = onAction
+    onCloseRef.current = onClose
+  })
+
+  useEffect(() => {
+    if (!isOpen) {
+      lastOpenedUrlRef.current = null
+      return
+    }
+    if (lastOpenedUrlRef.current === url) return
+    lastOpenedUrlRef.current = url
+    void onActionRef.current(url).finally(() => {
+      onCloseRef.current()
     })
-  }, [onAction, opening, url])
+  }, [isOpen, url])
 
-  return (
-    <AlertDialog
-      open={isOpen}
-      onOpenChange={(nextOpen) => {
-        if (!nextOpen) onClose()
-      }}
-    >
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>
-            {isLocalFile ? t("localFileTitle") : t("externalLinkTitle")}
-          </AlertDialogTitle>
-          <AlertDialogDescription>
-            {isLocalFile
-              ? t("localFileDescription")
-              : t("externalLinkDescription")}
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <div className="max-h-28 overflow-auto rounded-md bg-muted px-3 py-2 font-mono text-xs break-all">
-          {localTarget?.path ?? url}
-        </div>
-        <AlertDialogFooter>
-          <AlertDialogCancel disabled={opening}>
-            {t("cancel")}
-          </AlertDialogCancel>
-          <AlertDialogAction disabled={opening} onClick={handleAction}>
-            {opening
-              ? t("opening")
-              : isLocalFile
-                ? t("openFile")
-                : t("openLink")}
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
-  )
+  return null
 }
 
 function useOpenLinkOrFile() {
@@ -268,8 +323,20 @@ function useOpenLinkOrFile() {
         return
       }
 
+      const protocol = getAllowedExternalProtocol(url)
+      if (!protocol) {
+        toast.error(t("errorFailedLink"), {
+          description: t("errorUnsupportedLinkProtocol"),
+        })
+        return
+      }
+
       try {
-        await openUrl(url)
+        if (OS_HANDLER_PROTOCOLS.has(protocol) && isWebOpenerEnvironment()) {
+          dispatchOsHandlerUrl(url)
+        } else {
+          await openUrl(url)
+        }
       } catch (error) {
         toast.error(t("errorFailedLink"), {
           description: toErrorMessage(error),
@@ -283,9 +350,14 @@ function useOpenLinkOrFile() {
 export function useStreamdownLinkSafety(): LinkSafetyConfig {
   const handleOpenTarget = useOpenLinkOrFile()
 
+  const handleLinkCheck = useCallback(
+    (url: string) => shouldLetStreamdownOpenExternalUrl(url),
+    []
+  )
+
   const renderModal = useCallback(
     (props: LinkSafetyModalProps) => (
-      <LinkSafetyModal {...props} onAction={handleOpenTarget} />
+      <DirectLinkOpen {...props} onAction={handleOpenTarget} />
     ),
     [handleOpenTarget]
   )
@@ -293,16 +365,17 @@ export function useStreamdownLinkSafety(): LinkSafetyConfig {
   return useMemo(
     () => ({
       enabled: true,
+      onLinkCheck: handleLinkCheck,
       renderModal,
     }),
-    [renderModal]
+    [handleLinkCheck, renderModal]
   )
 }
 
 /**
  * Resolve a tool-call file path (which may be absolute, workspace-relative, or
  * a bare relative path) into something `openFilePreview` can consume. Falls
- * back to the raw input when no other heuristic matches so the dialog can
+ * back to the raw input when no other heuristic matches so the opener can
  * still surface a useful error toast.
  */
 function resolveToolFilePath(
@@ -323,9 +396,7 @@ function resolveToolFilePath(
 }
 
 /**
- * Clickable file-path label that opens the same "open local file" confirmation
- * dialog used for markdown links inside agent messages, then routes the file
- * into the workspace file panel.
+ * Clickable file-path label that routes the file into the workspace file panel.
  */
 export function FilePathLink({
   filePath,
@@ -344,17 +415,20 @@ export function FilePathLink({
   const { activeFolder: folder } = useActiveFolder()
   const folderPath = folder?.path ?? null
   const { openFilePreview } = useWorkspaceContext()
-
-  const [isOpen, setIsOpen] = useState(false)
+  // `opening` drives the visual busy state. `openingRef` is the synchronous
+  // gate that survives rapid double-fires within a single event tick —
+  // React batches the `setOpening(true)` commit, so relying purely on the
+  // `disabled` attribute would leave a window where two clicks dispatched
+  // before commit could both pass the early-return check.
   const [opening, setOpening] = useState(false)
+  const openingRef = useRef(false)
 
-  const handleConfirm = useCallback(() => {
-    if (opening) return
+  const handleOpen = useCallback(() => {
+    if (openingRef.current) return
     if (!folderPath) {
       toast.error(t("errorCannotOpen"), {
         description: t("errorNoWorkspace"),
       })
-      setIsOpen(false)
       return
     }
     const relativePath = resolveToolFilePath(filePath, folderPath)
@@ -362,10 +436,10 @@ export function FilePathLink({
       toast.error(t("errorCannotOpen"), {
         description: t("errorOutsideWorkspace"),
       })
-      setIsOpen(false)
       return
     }
 
+    openingRef.current = true
     setOpening(true)
     void openFilePreview(relativePath, {
       line: line ?? undefined,
@@ -376,52 +450,26 @@ export function FilePathLink({
         })
       })
       .finally(() => {
+        openingRef.current = false
         setOpening(false)
-        setIsOpen(false)
       })
-  }, [filePath, folderPath, line, opening, openFilePreview, t])
+  }, [filePath, folderPath, line, openFilePreview, t])
 
   return (
-    <>
-      <span className={cn("block min-w-0", className)}>
-        <button
-          type="button"
-          title={title ?? filePath}
-          className="max-w-full cursor-pointer truncate text-left align-bottom hover:underline focus-visible:underline focus-visible:outline-none"
-          onClick={(e) => {
-            e.stopPropagation()
-            setIsOpen(true)
-          }}
-        >
-          {children}
-        </button>
-      </span>
-      <AlertDialog
-        open={isOpen}
-        onOpenChange={(next) => {
-          if (!next && !opening) setIsOpen(false)
+    <span className={cn("block min-w-0", className)}>
+      <button
+        type="button"
+        title={title ?? filePath}
+        aria-busy={opening}
+        disabled={opening}
+        className="max-w-full cursor-pointer truncate text-left align-bottom hover:underline focus-visible:underline focus-visible:outline-none disabled:cursor-wait disabled:opacity-70 disabled:hover:no-underline"
+        onClick={(e) => {
+          e.stopPropagation()
+          handleOpen()
         }}
       >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{t("localFileTitle")}</AlertDialogTitle>
-            <AlertDialogDescription>
-              {t("localFileDescription")}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <div className="max-h-28 overflow-auto rounded-md bg-muted px-3 py-2 font-mono text-xs break-all">
-            {filePath}
-          </div>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={opening}>
-              {t("cancel")}
-            </AlertDialogCancel>
-            <AlertDialogAction disabled={opening} onClick={handleConfirm}>
-              {opening ? t("opening") : t("openFile")}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-    </>
+        {children}
+      </button>
+    </span>
   )
 }
