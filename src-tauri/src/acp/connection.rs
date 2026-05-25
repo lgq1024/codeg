@@ -3443,6 +3443,7 @@ async fn persist_assistant_turn(
                                 tool_use_id: Some(tc.id.clone()),
                                 tool_name,
                                 input_preview,
+                                meta: None,
                             });
                             let output_preview = tc.output.as_ref().and_then(|o| match o {
                                 ToolCallOutput::Text { content } => Some(content.clone()),

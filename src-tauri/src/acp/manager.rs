@@ -1136,6 +1136,7 @@ impl crate::acp::delegation::spawner::ConnectionSpawner for ConnectionManagerSpa
         let effective_working_dir = working_dir.or(parent_working_dir);
         self.manager
             .spawn_agent(
+                &self.db.conn,
                 agent_type,
                 effective_working_dir,
                 None,

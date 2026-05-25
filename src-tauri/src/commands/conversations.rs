@@ -2,7 +2,6 @@ use std::collections::{HashMap, HashSet};
 
 use crate::app_error::AppCommandError;
 use crate::db::entities::conversation;
-#[cfg(feature = "tauri-runtime")]
 use crate::db::service::import_service;
 use crate::db::service::{conversation_service, conversation_turn_service, folder_service, tab_service};
 #[cfg(feature = "tauri-runtime")]
