@@ -890,6 +890,7 @@ function connectionsReducer(
         // delegation_started fires; treat it as connected so any UI
         // surface that gates on status reflects reality.
         status: "connected",
+        modelId: null,
         promptCapabilities: {
           image: false,
           audio: false,
