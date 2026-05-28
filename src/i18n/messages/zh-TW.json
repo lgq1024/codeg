@@ -476,18 +476,26 @@
     "generalConfigDescriptionDefault": "支援重要配置輸入（API URL、API Key、Model）和原生 JSON 配置管理。",
     "multiAgent": {
       "title": "多智慧體協同",
-      "description": "允許活躍的智慧體透過 codeg 委派 MCP 將子任務交給其他智慧體。子會話會在獨立的 ACP 連線中執行，結果以內嵌方式回流到父對話。",
+      "description": "允許活躍的智慧體將子任務委派給其他智慧體。",
       "enable": "啟用委派",
       "enableHint": "關閉後，delegate_to_agent 工具會從智慧體的 MCP 工具清單中隱藏。",
       "depthLimit": "最大委派深度",
       "depthHint": "允許範圍：{min}–{max}。限制委派鏈（根 → 子 → 孫 …）的最大遞迴深度。",
-      "timeoutSeconds": "預設逾時（秒）",
-      "timeoutHint": "允許範圍：{min}–{max}。當呼叫方未指定 timeout_seconds 時使用。",
       "save": "儲存",
       "saving": "儲存中…",
       "saved": "委派設定已儲存",
       "saveFailed": "委派設定儲存失敗",
-      "loadFailed": "載入委派設定失敗：{detail}"
+      "loadFailed": "載入委派設定失敗：{detail}",
+      "tabGeneral": "一般",
+      "tabAgentDefaults": "子智慧體設定",
+      "agentDefaultsDescription": "多智慧體協同在為委派呼叫啟動子智慧體時使用這些覆寫項。下方選項透過即時探測取得，所選即所用。",
+      "probing": "正在載入該智慧體的可用設定項…",
+      "probeFailed": "載入設定項失敗：{detail}",
+      "retry": "重試",
+      "noConfigAvailable": "該智慧體沒有可設定項。",
+      "modeLabel": "模式",
+      "agentDefaultHint": "智慧體預設：{value}",
+      "defaultOptionLabel": "預設（{value}）"
     },
     "actions": {
       "dragSort": "拖拽排序",
@@ -1054,7 +1062,9 @@
       "closeOthers": "關閉其它",
       "closeAll": "關閉所有",
       "preview": "預覽",
-      "editSource": "編輯原始碼"
+      "editSource": "編輯原始碼",
+      "maximize": "最大化",
+      "restore": "還原"
     },
     "terminal": {
       "rename": "重新命名",
@@ -1863,6 +1873,9 @@
         "subAgentRunning": "子代理執行中…",
         "noDetail": "暫無詳情。",
         "unknownAgent": "子智慧體",
+        "openDetail": "檢視會話",
+        "detailTitle": "子智慧體會話",
+        "detailDescription": "唯讀檢視委派給子智慧體的會話內容。",
         "status": {
           "running": "執行中",
           "ok": "完成",
