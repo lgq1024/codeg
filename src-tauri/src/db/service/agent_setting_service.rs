@@ -154,6 +154,9 @@ pub async fn set_installed_version(
         .one(conn)
         .await?
     {
+        if model.installed_version == installed_version {
+            return Ok(());
+        }
         let mut active = model.into_active_model();
         active.installed_version = Set(installed_version);
         active.updated_at = Set(Utc::now());

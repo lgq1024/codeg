@@ -124,15 +124,6 @@ fn package_name_from_spec(package: &str) -> String {
     normalized.to_string()
 }
 
-/// Validate and normalize a user-supplied custom version for install.
-///
-/// Stricter than [`normalize_version_candidate`]: tolerates a leading `v`/`V`,
-/// then requires the first character to be a digit and the rest to be drawn from
-/// `[0-9A-Za-z.-+]` (covers semver pre-release/build metadata and calendar
-/// versions like `2026.5.20`). This rejects npm dist-tags (`latest`, `next`) and
-/// anything containing whitespace, `@`, or path separators, so the result is
-/// safe to interpolate into an npm package spec (`name@<v>`) and to substitute
-/// into a binary download URL. Returns the version without the leading `v`.
 fn sanitize_custom_version(input: &str) -> Option<String> {
     let trimmed = input.trim();
     let normalized = trimmed
@@ -143,9 +134,6 @@ fn sanitize_custom_version(input: &str) -> Option<String> {
     if !chars.next()?.is_ascii_digit() {
         return None;
     }
-    // Require a dotted version (e.g. `1.2.3`) so the validator agrees with the
-    // detection fallback `version_from_package_spec`, which needs a `.` — and so
-    // a "custom version" is a concrete version rather than an npm range (`2`).
     if !normalized.contains('.') {
         return None;
     }
@@ -155,13 +143,6 @@ fn sanitize_custom_version(input: &str) -> Option<String> {
     all_allowed.then(|| normalized.to_string())
 }
 
-/// Build the `npm install -g` spec for an agent.
-///
-/// `version_override` of `None` or all-whitespace yields the registry-pinned
-/// `package` spec unchanged (current behavior). A non-empty override is
-/// validated via [`sanitize_custom_version`] and combined with the registry
-/// package *name* (its pinned version is dropped) to form `name@<version>`. An
-/// override that fails validation is rejected with an error.
 fn build_npm_install_spec(package: &str, version_override: Option<&str>) -> Result<String, AcpError> {
     match version_override {
         Some(raw) if !raw.trim().is_empty() => {
@@ -173,11 +154,6 @@ fn build_npm_install_spec(package: &str, version_override: Option<&str>) -> Resu
     }
 }
 
-/// Substitute a custom version into a registry binary download URL by replacing
-/// every occurrence of the registry version string. The registry version is
-/// embedded in the GitHub release URL (the path tag, and for some agents the
-/// asset filename), so a plain replace yields the URL for the requested version
-/// — assuming the upstream release reuses the same asset-naming convention.
 fn apply_custom_version_to_url(url: &str, registry_version: &str, custom_version: &str) -> String {
     url.replace(registry_version, custom_version)
 }

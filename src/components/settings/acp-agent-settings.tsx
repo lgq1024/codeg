@@ -2460,14 +2460,24 @@ function hasComparableVersion(
   return Boolean(value && /\d/.test(value) && value.includes("."))
 }
 
-// Mirror of the backend `sanitize_custom_version`: a custom install version
-// tolerates a leading `v`, must start with a digit, must be dotted (e.g.
-// `1.2.3`), and may only contain `[0-9A-Za-z.-+]` (semver pre-release/build +
-// calendar versions). Rejects npm dist-tags like `latest`, bare majors like
-// `2`, and anything with spaces / `@`.
 function isValidCustomVersion(value: string): boolean {
   const normalized = value.trim().replace(/^[vV]/, "")
   return /^[0-9][0-9A-Za-z.\-+]*$/.test(normalized) && normalized.includes(".")
+}
+
+function updateAgentInstalledVersion(
+  agents: AcpAgentInfo[],
+  agentType: AgentType,
+  installedVersion: string | null
+): AcpAgentInfo[] {
+  let changed = false
+  const next = agents.map((agent) => {
+    if (agent.agent_type !== agentType) return agent
+    if (agent.installed_version === installedVersion) return agent
+    changed = true
+    return { ...agent, installed_version: installedVersion }
+  })
+  return changed ? next : agents
 }
 
 function buildVersionCheck(agent: AcpAgentInfo): UiCheckItem | null {
@@ -3143,8 +3153,6 @@ export function AcpAgentSettings() {
         [agent.agent_type]:
           kind ?? (mode === "download" ? "download_binary" : "upgrade_binary"),
       }))
-      // A custom-version install must replace whatever is cached, otherwise a
-      // higher cached version would still win on connect.
       const clearCache = mode === "upgrade" || Boolean(versionOverride)
       const actionLabel = versionOverride
         ? t("actions.customInstall")
@@ -3168,10 +3176,10 @@ export function AcpAgentSettings() {
           agent.agent_type
         )
         setAgents((prev) =>
-          prev.map((item) =>
-            item.agent_type === agent.agent_type
-              ? { ...item, installed_version: detectedVersion }
-              : item
+          updateAgentInstalledVersion(
+            prev,
+            agent.agent_type,
+            detectedVersion ?? null
           )
         )
         toast.success(
@@ -3203,10 +3211,10 @@ export function AcpAgentSettings() {
           try {
             const detected = await acpDetectAgentLocalVersion(agent.agent_type)
             setAgents((prev) =>
-              prev.map((item) =>
-                item.agent_type === agent.agent_type
-                  ? { ...item, installed_version: detected ?? null }
-                  : item
+              updateAgentInstalledVersion(
+                prev,
+                agent.agent_type,
+                detected ?? null
               )
             )
           } catch (detectErr) {
@@ -3247,8 +3255,6 @@ export function AcpAgentSettings() {
             ? "install_npx"
             : "upgrade_npx",
       }))
-      // A custom-version install forces a clean reinstall so the requested
-      // version replaces whatever is currently installed.
       const cleanFirst = mode === "upgrade" || Boolean(versionOverride)
       const actionLabel = versionOverride
         ? t("actions.customInstall")
@@ -3267,11 +3273,7 @@ export function AcpAgentSettings() {
           versionOverride ?? null
         )
         setAgents((prev) =>
-          prev.map((item) =>
-            item.agent_type === agent.agent_type
-              ? { ...item, installed_version: installedVersion }
-              : item
-          )
+          updateAgentInstalledVersion(prev, agent.agent_type, installedVersion)
         )
         await runPreflight(agent.agent_type)
         const detectedVersion = await acpDetectAgentLocalVersion(
@@ -3279,11 +3281,7 @@ export function AcpAgentSettings() {
         )
         if (detectedVersion && detectedVersion !== installedVersion) {
           setAgents((prev) =>
-            prev.map((item) =>
-              item.agent_type === agent.agent_type
-                ? { ...item, installed_version: detectedVersion }
-                : item
-            )
+            updateAgentInstalledVersion(prev, agent.agent_type, detectedVersion)
           )
         }
         const finalVersion = detectedVersion ?? installedVersion
@@ -3315,10 +3313,10 @@ export function AcpAgentSettings() {
           try {
             const detected = await acpDetectAgentLocalVersion(agent.agent_type)
             setAgents((prev) =>
-              prev.map((item) =>
-                item.agent_type === agent.agent_type
-                  ? { ...item, installed_version: detected ?? null }
-                  : item
+              updateAgentInstalledVersion(
+                prev,
+                agent.agent_type,
+                detected ?? null
               )
             )
           } catch (detectErr) {
@@ -3362,11 +3360,7 @@ export function AcpAgentSettings() {
       try {
         await acpUninstallAgent(agent.agent_type, taskId)
         setAgents((prev) =>
-          prev.map((item) =>
-            item.agent_type === agent.agent_type
-              ? { ...item, installed_version: null }
-              : item
-          )
+          updateAgentInstalledVersion(prev, agent.agent_type, null)
         )
         await runPreflight(agent.agent_type)
         toast.success(t("toasts.uninstallCompleted", { name: agent.name }), {
@@ -3656,6 +3650,8 @@ export function AcpAgentSettings() {
     selectedConfigText,
     selectedOpenCodeAuthJsonText,
   ])
+  const customVersionTrimmed = customVersionInput.trim()
+  const customVersionValid = isValidCustomVersion(customVersionInput)
   const openCodeModelOptions = useMemo(
     () => buildOpenCodeModelOptions(selectedOpenCodeConfig),
     [selectedOpenCodeConfig]
@@ -7990,27 +7986,23 @@ supports_websockets = true`}
               placeholder={customInstallAgent?.registry_version ?? "1.0.0"}
               onChange={(e) => setCustomVersionInput(e.target.value)}
               onKeyDown={(e) => {
-                if (
-                  e.key === "Enter" &&
-                  isValidCustomVersion(customVersionInput)
-                ) {
+                if (e.key === "Enter" && customVersionValid) {
                   e.preventDefault()
                   confirmCustomInstall()
                 }
               }}
             />
-            {customVersionInput.trim() !== "" &&
-              !isValidCustomVersion(customVersionInput) && (
-                <p className="text-[11px] text-red-500">
-                  {t("dialogs.customInstallInvalid")}
-                </p>
-              )}
+            {customVersionTrimmed !== "" && !customVersionValid && (
+              <p className="text-[11px] text-red-500">
+                {t("dialogs.customInstallInvalid")}
+              </p>
+            )}
           </div>
           <AlertDialogFooter>
             <AlertDialogCancel>{t("actions.cancel")}</AlertDialogCancel>
             <Button
               onClick={confirmCustomInstall}
-              disabled={!isValidCustomVersion(customVersionInput)}
+              disabled={!customVersionValid}
             >
               <PackagePlus className="h-3.5 w-3.5" />
               {t("dialogs.customInstallSubmit")}
